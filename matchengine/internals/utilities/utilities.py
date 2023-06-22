@@ -25,7 +25,6 @@ if TYPE_CHECKING:
     from matchengine.internals.engine import MatchEngine
     from matchengine.internals.typing.matchengine_types import MongoQuery
 
-logging.basicConfig(level=logging.INFO)
 log = logging.getLogger('matchengine')
 
 
@@ -84,12 +83,6 @@ def find_plugins(matchengine: MatchEngine):
                                                'create_trial_matches',
                                                matchengine.create_trial_matches),
                                        matchengine))
-                    setattr(matchengine,
-                            'results_transformer',
-                            MethodType(getattr(item,
-                                               'results_transformer',
-                                               matchengine.results_transformer),
-                                       matchengine))
             elif issubclass(item, DBSecrets):
                 if item_name == matchengine.db_secrets_class:
                     if matchengine.debug:
@@ -130,56 +123,3 @@ def find_plugins(matchengine: MatchEngine):
                                        matchengine))
 
 
-def get_sort_order(matchengine: MatchEngine, match_document: Dict) -> list:
-    """
-    Sort trial matches based on sorting order specified in config.json under the key 'trial_match_sorting'.
-
-    The function will iterate over the objects in the 'trial_match_sorting', and then look for that value
-    in the trial_match document, placing it in an array.
-
-    If being displayed, the matchminerAPI filters the array to output a single sort number.
-
-    The sorting is currently organized as follows:
-    1. MMR status
-    2. Tumor Mutational Burden
-    3. UVA/POLE/APOBEC/Tobacco Status
-    4. Tier 1
-    5. Tier 2
-    6. CNV
-    7. Tier 3
-    8. Tier 4
-    9. wild type
-    10. Variant Level
-    11. Gene-level
-    12. Exact cancer match
-    13. General cancer match (all solid/liquid)
-    14. DFCI Coordinating Center
-    15. All other Coordinating centers
-    16. Protocol Number
-    """
-    sort_map = matchengine.config['trial_match_sorting']
-    sort_array = list()
-
-    for sort_dimension in sort_map:
-        sort_index = 99
-        for sort_key in sort_dimension:
-            if sort_key in match_document:
-                sorting_vals = sort_dimension[sort_key]
-                is_any = sorting_vals.get("ANY_VALUE", None)
-                trial_match_val = str(match_document[sort_key]) if is_any is None else "ANY_VALUE"
-
-                if (trial_match_val is not None and trial_match_val in sorting_vals) or is_any is not None:
-                    matched_sort_int = sort_dimension[sort_key][trial_match_val]
-                    if matched_sort_int < sort_index:
-                        sort_index = matched_sort_int
-
-        sort_array.append(sort_index)
-
-    # If an idenfitifer is not a protocol id (e.g. 17-251) then skip replacing
-    identifier = match_document.get(matchengine.match_criteria_transform.trial_identifier, None)
-    if isinstance(identifier, ObjectId) or identifier is None:
-        pass
-    else:
-        sort_array.append(int(identifier.replace("-", "")))
-
-    return sort_array

@@ -291,14 +291,18 @@ def translate_match_path(matchengine,
                     if trial_key_settings.get('ignore', False):
                         continue
 
-                    sample_value_function_name = trial_key_settings.get('sample_value', 'nomap')
+                    if 'sample_value' not in trial_key_settings:
+                        raise Exception(f'unknown or invalid key: {trial_key}')
+
+                    sample_value_function_name = trial_key_settings['sample_value']
                     sample_function = getattr(matchengine.match_criteria_transform.query_transformers,
                                               sample_value_function_name)
                     sample_function_args = dict(sample_key=trial_key.upper(),
                                                 trial_value=trial_value,
                                                 parent_path=match_clause_data.parent_path,
                                                 trial_path=node_name,
-                                                trial_key=trial_key)
+                                                trial_key=trial_key,
+                                                compare_date=matchengine.age_comparison_date)
                     sample_function_args.update(trial_key_settings)
                     result: QueryTransformerResult = sample_function(**sample_function_args)
                     to_create = len(result.results) - 1

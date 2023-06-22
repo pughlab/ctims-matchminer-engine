@@ -1,214 +1,127 @@
 from __future__ import annotations
 
-import asyncio
 import datetime
 import logging
 from typing import TYPE_CHECKING
 
-from pymongo import UpdateMany, InsertOne
+from pymongo import ReplaceOne, UpdateOne
 
-from matchengine.internals.typing.matchengine_types import RunLogUpdateTask, UpdateTask, MongoQuery
+from matchengine.internals.typing.matchengine_types import RunLogUpdateTask, UpdateTask, MongoQuery, UpdateResult
 from matchengine.internals.utilities.list_utils import chunk_list
-from matchengine.internals.utilities.utilities import perform_db_call
 
-logging.basicConfig(level=logging.INFO)
 log = logging.getLogger('matchengine')
 if TYPE_CHECKING:
     from matchengine.internals.engine import MatchEngine
-
 
 async def async_update_matches_by_protocol_no(matchengine: MatchEngine, protocol_no: str):
     """
     Update trial matches by diff'ing the newly created trial matches against existing matches in
     the db. Delete matches by adding {is_disabled: true} and insert all new matches.
     """
-    matches_by_sample_id = matchengine.matches.get(protocol_no, dict())
-    updated_time = datetime.datetime.now()
+
+    log.info(f"Updating matches for {protocol_no}")
+
+    # Get the matches, adding updated times
+    matches_by_sample_id = matchengine.matches[protocol_no]
+    updated_time = datetime.datetime.now(datetime.timezone.utc)
     for matches in matches_by_sample_id.values():
         for match in matches:
             match['_updated'] = updated_time
-    if protocol_no not in matchengine.matches or protocol_no not in matchengine._trials_to_match_on:
-        log.info(f"{matchengine.match_criteria_transform.trial_collection} {protocol_no} was not matched on, not updating {matchengine.match_criteria_transform.trial_collection} matches")
-        if not matchengine.skip_run_log_entry:
-            matchengine.task_q.put_nowait(RunLogUpdateTask(protocol_no))
-        await matchengine.task_q.join()
-        return
-    log.info(f"Updating matches for {protocol_no}")
-    if not matchengine.drop:
 
-        # If no matches are found, disable all match records by sample id
-        if not matchengine.matches[protocol_no]:
-            for chunk in chunk_list(list(matchengine.clinical_ids_for_protocol_cache[protocol_no]),
-                                    matchengine.chunk_size):
-                matchengine.task_q.put_nowait(
-                    UpdateTask(
-                        [UpdateMany(filter={matchengine.match_criteria_transform.match_trial_link_id: protocol_no,
-                                            'clinical_id': {'$in': chunk}},
-                                    update={'$set': {"is_disabled": True,
-                                                     '_updated': updated_time}})],
-                        protocol_no
-                    )
-                )
-        else:
-            # Get matches to disable and issue queries
-            matches_to_disable = await get_all_except(matchengine, protocol_no, matches_by_sample_id)
-            delete_ops = await get_delete_ops(matches_to_disable, matchengine)
-            matchengine.task_q.put_nowait(UpdateTask(delete_ops, protocol_no))
+    # Find all the sample IDs we queried
+    all_sample_ids_mined = {
+        matchengine.clinical_mapping[cid]
+        for cid in matchengine.clinical_run_log_entries[protocol_no]
+    }
+    for k in matches_by_sample_id.keys():
+        if k not in all_sample_ids_mined:
+            raise ValueError("Generated matches for sample IDs we did not query")
 
-    for sample_id in matches_by_sample_id.keys():
-        if not matchengine.drop:
-            new_matches_hashes = [match['hash'] for match in matches_by_sample_id[sample_id]]
+    # Set up tracking of results
+    to_insert, to_disable, to_enable = 0, 0, 0
+    matchengine.update_trackers_by_protocol[protocol_no] = UpdateResult()
 
-            # get existing matches in db with identical hashes to newly found matches
-            existing = await get_existing_matches(matchengine, new_matches_hashes)
-            existing_hashes = {result['hash'] for result in existing}
-            disabled = {result['hash'] for result in existing if result['is_disabled']}
+    # Collection to query
+    coll = matchengine.async_db_ro[matchengine.trial_match_collection]
 
-            # insert new matches if they don't already exist. disable everything else
-            matches_to_insert = get_matches_to_insert(matches_by_sample_id,
-                                                      existing_hashes,
-                                                      sample_id)
-            matches_to_disable = await get_matches_to_disable(matchengine,
-                                                              new_matches_hashes,
-                                                              protocol_no,
-                                                              sample_id)
+    # For each chunk of sample IDs:
+    for sample_id_chunk in chunk_list(sorted(all_sample_ids_mined), matchengine.chunk_size):
+        # List of write ops we need to perform
+        ops = []
 
-            # flip is_disabled flag if a new match generated during run matches hash of an existing
-            matches_to_mark_available = [m for m in matches_by_sample_id[sample_id] if
-                                         m['hash'] in disabled]
-            ops = get_update_operations(matches_to_disable,
-                                        matches_to_insert,
-                                        matches_to_mark_available,
-                                        matchengine)
-        else:
-            ops = [InsertOne(document=trial_match) for trial_match in
-                   matches_by_sample_id[sample_id]]
-        matchengine.task_q.put_nowait(UpdateTask(ops, protocol_no))
+        # Get all found matches
+        found_matches = [
+            match
+            for sample_id in sample_id_chunk
+            for match in matches_by_sample_id.get(sample_id, [])
+        ]
 
+        # Get their hashes
+        hashes_to_insert = set()
+        for match in found_matches:
+            h = match['hash']
+            if h in hashes_to_insert:
+                raise ValueError("Matching generated multiple matches with same hash")
+            hashes_to_insert.add(h)
+
+
+        # Get all existing matches with either the same hashes (to reenable or leave in place)
+        # or that are not disabled (to disable them if necessary)
+        current_matches_query = MongoQuery({
+            matchengine.match_criteria_transform.match_trial_link_id: protocol_no,
+            'sample_id': {'$in': sample_id_chunk},
+            '$or': [
+                {'hash': { '$in': list(hashes_to_insert) }},
+                {'is_disabled': False}
+            ]
+        })
+        projection = { "hash": 1, "is_disabled": 1, "_id": 1 }
+
+        # For each of those found matches:
+        async for match in coll.find(current_matches_query, projection):
+            if (match['hash'] in hashes_to_insert) and not match['is_disabled']:
+                # Leave the existing match in place:
+                hashes_to_insert.remove(match['hash'])
+            elif (match['hash'] in hashes_to_insert) and match['is_disabled']:
+                # Reenable the match
+                hashes_to_insert.remove(match['hash'])
+                to_enable += 1
+                ops.append(UpdateOne(
+                    filter={'_id': match['_id']},
+                    update={'$set': {'is_disabled': False,
+                                    '_updated': updated_time}}
+                ))
+            else:
+                # Disable the match
+                to_disable += 1
+                ops.append(UpdateOne(
+                    filter={'_id': match['_id']},
+                    update={'$set': {'is_disabled': True,
+                                    '_updated': updated_time}}
+                ))
+
+        # Insert any genuinely new matches:
+        for match in found_matches:
+            if match['hash'] in hashes_to_insert:
+                hashes_to_insert.remove(match['hash'])
+                to_insert += 1
+                ops.append(ReplaceOne(
+                    filter={'hash': match['hash']},
+                    replacement=match,
+                    upsert=True
+                ))
+
+        # Enquue corresponding update tasks
+        for op_chunk in chunk_list(ops, matchengine.chunk_size):
+            matchengine.task_q.put_nowait(UpdateTask(op_chunk, protocol_no))
+
+    # Wait for tasks to complete
+    log.info(f"Planned changes: insert {to_insert}, disable {to_disable}, enable {to_enable}")
+    await matchengine.task_q.join()
+    tracker = matchengine.update_trackers_by_protocol.pop(protocol_no)
+    log.info(f"Completed updates for {protocol_no}: {tracker.fmt()}")
+
+    # Insert run log so we have a cache:
     if not matchengine.skip_run_log_entry:
         matchengine.task_q.put_nowait(RunLogUpdateTask(protocol_no))
     await matchengine.task_q.join()
-
-
-async def get_all_except(matchengine: MatchEngine,
-                         protocol_no: str,
-                         trial_matches_by_sample_id: dict) -> list:
-    """Return all matches except ones matching current protocol_no"""
-
-    # get clinical ids with matches
-    clinical_ids = {matchengine.sample_mapping[sample_id] for sample_id in trial_matches_by_sample_id.keys()}
-
-    # if protocol has been run previously, subtract clinical ids from current run from
-    # previously run clinical ids for a specific protocol. The remainder are ids
-    # which were run previously, but not in the current run.
-    if protocol_no in matchengine.clinical_run_log_entries:
-        clinical_ids = matchengine.clinical_run_log_entries[protocol_no] - clinical_ids
-
-    query = {
-        matchengine.match_criteria_transform.match_trial_link_id: protocol_no,
-        "clinical_id": {
-            '$in': [clinical_id for clinical_id in clinical_ids]
-        }
-    }
-    projection = {
-        '_id': 1,
-        'hash': 1,
-        'clinical_id': 1
-    }
-
-    results = await perform_db_call(matchengine,
-                                    collection=matchengine.trial_match_collection,
-                                    query=MongoQuery(query),
-                                    projection=projection)
-
-    return [result for result in results]
-
-
-async def get_delete_ops(matches_to_disable: list, matchengine: MatchEngine) -> list:
-    updated_time = datetime.datetime.now()
-    hashes = [result['hash'] for result in matches_to_disable]
-    ops = list()
-    for chunk in chunk_list(hashes, matchengine.chunk_size):
-        ops.append(UpdateMany(filter={'hash': {'$in': chunk}},
-                              update={'$set': {"is_disabled": True, '_updated': updated_time}}))
-    return ops
-
-
-async def get_existing_matches(matchengine: MatchEngine, new_matches_hashes: list) -> list:
-    """
-    Get matches in db which have the same hashes as newly found matches.
-    :param matchengine:
-    :param new_matches_hashes:
-    :return:
-    """
-    matches_to_not_change_query = MongoQuery({'hash': {'$in': new_matches_hashes}})
-    projection = {"hash": 1, "is_disabled": 1}
-    matches = await asyncio.gather(
-        perform_db_call(matchengine,
-                        matchengine.trial_match_collection,
-                        matches_to_not_change_query,
-                        projection)
-    )
-    return matches[0]
-
-
-async def get_matches_to_disable(matchengine: MatchEngine,
-                                 new_matches_hashes: list,
-                                 protocol_no: str,
-                                 sample_id: str) -> list:
-    """
-    Get matches to disable by looking for existing, enabled matches whose
-    hashes are not present in newly generated matches during current run.
-
-    Done for every sample_id
-
-    :param matchengine:
-    :param new_matches_hashes:
-    :param protocol_no:
-    :param sample_id:
-    :return:
-    """
-    query = {
-        matchengine.match_criteria_transform.match_trial_link_id: protocol_no,
-        'sample_id': sample_id,
-        'is_disabled': False,
-        'hash': {
-            '$nin': new_matches_hashes
-        }
-    }
-    matches_to_disable_query = MongoQuery(query)
-    projection = {"hash": 1, "is_disabled": 1}
-    matches = await asyncio.gather(
-        perform_db_call(matchengine,
-                        matchengine.trial_match_collection,
-                        matches_to_disable_query,
-                        projection)
-    )
-    return matches[0]
-
-
-def get_update_operations(matches_to_disable: list,
-                          matches_to_insert: list,
-                          matches_to_mark_available: list,
-                          matchengine: MatchEngine) -> list:
-    ops = list()
-    updated_time = datetime.datetime.now()
-    disable_hashes = [trial_match['hash'] for trial_match in matches_to_disable]
-    for chunk in chunk_list(disable_hashes, matchengine.chunk_size):
-        ops.append(UpdateMany(filter={'hash': {'$in': chunk}},
-                              update={'$set': {'is_disabled': True,
-                                               '_updated': updated_time}}))
-    for to_insert in matches_to_insert:
-        ops.append(InsertOne(document=to_insert))
-
-    available_hashes = [trial_match['hash'] for trial_match in matches_to_mark_available]
-    for chunk in chunk_list(available_hashes, matchengine.chunk_size):
-        ops.append(UpdateMany(filter={'hash': {'$in': chunk}},
-                              update={'$set': {'is_disabled': False,
-                                               '_updated': updated_time}}))
-    return ops
-
-
-def get_matches_to_insert(matches_by_sample_id: list, existing_hashes: set,
-                          sample_id: str) -> list:
-    return [m for m in matches_by_sample_id[sample_id] if m['hash'] not in existing_hashes]

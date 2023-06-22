@@ -27,13 +27,8 @@ class TrialMatchDocumentCreator(object):
     cache: Cache
     config: Dict
 
-    def results_transformer(self: MatchEngine, results: Dict[ClinicalID, List[MatchReason]]):
-        pass
-
-    def create_trial_matches(self: MatchEngine, trial_match: TrialMatch,
-                             new_trial_match: Dict) -> Dict:
-        pass
-
+    def create_trial_matches(self, trial_match: TrialMatch) -> list:
+        return []
 
 class QueryTransformerContainer(object):
     _: MatchCriteriaTransform

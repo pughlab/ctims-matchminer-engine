@@ -19,7 +19,7 @@ class TestMatchEngine(TestCase):
         """init matchengine without running __init__ since tests will need to instantiate various values individually"""
         self.me = MatchEngine.__new__(MatchEngine)
 
-        assert self.me.create_trial_matches({}, {}).__class__ is dict
+        assert self.me.create_trial_matches({}).__class__ is list
         self.me.plugin_dir = 'matchengine/tests/plugins'
         self.me.match_document_creator_class = 'TestTrialMatchDocumentCreator'
         self.me.visualize_match_paths = False
@@ -37,7 +37,7 @@ class TestMatchEngine(TestCase):
         assert hasattr(self.me, 'create_trial_matches')
         assert id(self.me.create_trial_matches) != old_create_trial_matches
         blank_trial_match = self.me.create_trial_matches({})
-        assert blank_trial_match.__class__ is dict and not blank_trial_match
+        assert blank_trial_match.__class__ is list and not blank_trial_match
 
     def test_query_transform(self):
         find_plugins(self.me)

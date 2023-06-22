@@ -11,7 +11,6 @@ from bson import json_util
 
 from matchengine.internals.database_connectivity.mongo_connection import MongoDBConnection
 
-logging.basicConfig(level=logging.INFO)
 log = logging.getLogger('matchengine')
 
 

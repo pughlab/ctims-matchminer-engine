@@ -12,28 +12,24 @@ _scope_handler = {
 
 def set_static_date_time(year=2000, month=7, day=12, hour=9, minute=47, second=40, microsecond=303620):
     global _scope_handler
-    default_d = f'datetime.date({year}, {month}, {day})'
-    default_dt = f'datetime.datetime({year}, {month}, {day}, {hour}, {minute}, {second}, {microsecond})'
+    fake_timestamp = str(datetime.datetime(year, month, day, hour, minute, second, microsecond).timestamp())
     static_classes = f"""
 import datetime
-class StaticDatetime(datetime.datetime):
-    @classmethod
-    def now(cls, **kwargs):
-        return {default_dt}
-    @classmethod
-    def date(cls, **kwargs):
-        return StaticDate(self.year, self.month, self.day)
-    @classmethod
-    def __instancecheck__(cls, instance):
-        if cls is StaticDate:
-            return True
-        else:
-            return isinstance(instance, cls)
-    
+
 class StaticDate(datetime.date):
     @classmethod
     def today(cls):
-        return {default_d}"""
+        return cls.fromtimestamp({fake_timestamp})
+
+class StaticDatetime(datetime.datetime, StaticDate):
+    @classmethod
+    def now(cls, tz=None):
+        return cls.fromtimestamp({fake_timestamp}, tz)
+
+    @classmethod
+    def date(cls, **kwargs):
+        return StaticDate(self.year, self.month, self.day)
+    """
     scope = dict()
     exec(static_classes, scope)
     perform_override(scope['StaticDate'], _scope_handler['old_date'], scope)

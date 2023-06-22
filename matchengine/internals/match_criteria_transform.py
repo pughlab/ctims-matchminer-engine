@@ -5,6 +5,8 @@ import os
 
 from typing import TYPE_CHECKING
 
+log = logging.getLogger('matchengine')
+
 if TYPE_CHECKING:
     from typing import (
         Callable,
@@ -100,7 +102,7 @@ class MatchCriteriaTransform(object):
             self.custom_status_key_name = self.use_custom_trial_status_key.get("key_name", None)
             self.custom_open_to_accrual_vals = []
             if self.use_custom_trial_status_key.get("open_to_accrual_values", None) is None:
-                logging.error("Missing config field: trial_status_key.open_to_accrual_values. Must contain list of "
+                log.error("Missing config field: trial_status_key.open_to_accrual_values. Must contain list of "
                               "acceptable 'open to accrual' values")
                 exit(1)
 

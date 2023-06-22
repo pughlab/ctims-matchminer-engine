@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Iterable, Tuple
 
 import dateutil.parser
 import pymongo
-from pymongo import UpdateMany
+from pymongo import UpdateMany, InsertOne
 
 from matchengine.internals.database_connectivity.mongo_connection import MongoDBConnection
 from matchengine.internals.match_criteria_transform import MatchCriteriaTransform
@@ -30,15 +30,14 @@ from matchengine.internals.typing.matchengine_types import (
     UpdateTask,
     RunLogUpdateTask,
     CheckIndicesTask,
-    IndexUpdateTask
+    IndexUpdateTask,
+    UpdateResult
 )
 from matchengine.internals.utilities.list_utils import chunk_list
-from matchengine.internals.utilities.object_comparison import nested_object_hash
 from matchengine.internals.utilities.query import (
     execute_clinical_queries,
     execute_extended_queries,
-    get_docs_results,
-    get_valid_reasons
+    get_docs_results
 )
 from matchengine.internals.utilities.task_utils import (
     run_query_task,
@@ -73,7 +72,6 @@ if TYPE_CHECKING:
         QueryNodeContainer
     )
 
-logging.basicConfig(level=logging.INFO)
 log = logging.getLogger('matchengine')
 
 
@@ -91,8 +89,9 @@ class MatchEngine(object):
     _task_q: asyncio.queues.Queue
     _matches: Dict[str, Dict[str, List[Dict]]]
     _loop: asyncio.AbstractEventLoop
-    _queue_task_count: int
     _workers: Dict[int, asyncio.Task]
+    update_trackers_by_protocol: Dict[str, UpdateResult]
+    global_update_tracker: Union[UpdateResult, None]
 
     def __enter__(self):
         return self
@@ -109,13 +108,12 @@ class MatchEngine(object):
         """
         Teardown database connections (async + synchronous) and async workers gracefully.
         """
-        if self.db_init:
-            self._async_db_ro.__exit__(exception_type, exception_value, exception_traceback)
-            self._async_db_rw.__exit__(exception_type, exception_value, exception_traceback)
-            self._db_ro.__exit__(exception_type, exception_value, exception_traceback)
+        self._async_db_ro.__exit__(exception_type, exception_value, exception_traceback)
+        self._async_db_rw.__exit__(exception_type, exception_value, exception_traceback)
+        self._db_ro.__exit__(exception_type, exception_value, exception_traceback)
+        self._db_rw.__exit__(exception_type, exception_value, exception_traceback)
         if not self.loop.is_closed():
             self._loop.run_until_complete(self._async_exit())
-            self._loop.stop()
             self._loop.close()
 
     def __init__(
@@ -134,7 +132,6 @@ class MatchEngine(object):
                 'config',
                 'dfci_config.json'),
             plugin_dir: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'plugins'),
-            db_init: bool = True,
             db_name: str = None,
             match_document_creator_class: str = "DFCITrialMatchDocumentCreator",
             query_node_transformer_class: str = "DFCIQueryNodeTransformer",
@@ -150,15 +147,23 @@ class MatchEngine(object):
             drop_accept: bool = False,
             resource_dirs: List = None,
             chunk_size: int = 1000,
-            bypass_warnings: bool = False
+            bypass_warnings: bool = False,
+            age_comparison_date = None,
+            delete_run_logs = False
     ):
         self.resource_dirs = list()
+        self.update_trackers_by_protocol = {}
+        self.global_update_tracker = None
         self.resource_dirs.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'ref'))
         if resource_dirs is not None:
             self.resource_dirs.extend(resource_dirs)
         self.trial_match_collection = trial_match_collection
         self.starttime = datetime.datetime.now()
+        self.age_comparison_date = age_comparison_date or datetime.date.today()
+        self.start_time_utc = datetime.datetime.now(datetime.timezone.utc)
         self.run_id = uuid.uuid4()
+        log.info(f"initializing matchengine with run id: {self.run_id.hex}")
+        log.info(f"age comparison date: {age_comparison_date}")
         self.run_log_entries = dict()
         self.ignore_run_log = ignore_run_log
         self.skip_run_log_entry = skip_run_log_entry
@@ -184,15 +189,21 @@ class MatchEngine(object):
         self.db_secrets_class = db_secrets_class
         find_plugins(self)
 
-        self.db_init = db_init
         self._db_ro = MongoDBConnection(read_only=True, async_init=False,
-                                        db=db_name) if self.db_init else None
-        self.db_ro = self._db_ro.__enter__() if self.db_init else None
+                                        db=db_name)
+        self.db_ro = self._db_ro.__enter__()
         self._db_rw = MongoDBConnection(read_only=False, async_init=False,
-                                        db=db_name) if self.db_init else None
-        self.db_rw = self._db_rw.__enter__() if self.db_init else None
-        log.info(f"Connected to database {self.db_ro.name}")
+                                        db=db_name)
+        self.db_rw = self._db_rw.__enter__()
+        log.info(f"connected to database {self.db_ro.name}")
         # TODO: check how this flag works with run log
+
+        if delete_run_logs:
+            log.info("deleting run logs")
+            run_log_collection = 'run_log_' + trial_match_collection
+            res = self.db_rw.get_collection(run_log_collection).delete_many({})
+            log.info(f"deleted {res.deleted_count} items")
+
         self._drop = drop
         if self._drop:
             log.info((f"Dropping all matches"
@@ -225,13 +236,12 @@ class MatchEngine(object):
         self.num_workers = num_workers
         self.visualize_match_paths = visualize_match_paths
         self.fig_dir = fig_dir
-        self._queue_task_count = int()
         self._matches: Dict[str, Dict[str, List[Dict]]] = dict()
 
         self.trials = self.get_trials()
         self._trials_to_match_on = self._get_trials_to_match_on(self.trials)
         if self.protocol_nos is None:
-            self.protocol_nos = list(self.trials.keys())
+            self.protocol_nos = sorted(self.trials.keys())
         self._run_log_history = self._populate_run_log_history()
         self._clinical_data = self._get_clinical_data()
         self.clinical_mapping = self.get_clinical_ids_from_sample_ids()
@@ -244,24 +254,39 @@ class MatchEngine(object):
         self.sample_mapping = {sample_id: clinical_id for clinical_id, sample_id in
                                self.clinical_mapping.items()}
         self.clinical_ids = set(self.clinical_mapping.keys())
-        self.clinical_run_log_mapping = (dict()
-                                         if self.get_clinical_ids_from_sample_ids()
-                                         else self.get_clinical_run_log_mapping())
         if self.sample_ids is None:
             self.sample_ids = list(self.clinical_mapping.values())
+        self._added_to_run_history = set()
 
         # instantiate a new async event loop to allow class to be used as if it is synchronous
-        try:
-            if asyncio.get_event_loop().is_closed() or not hasattr(self, '_loop'):
-                asyncio.set_event_loop(asyncio.new_event_loop())
-            self._loop = asyncio.get_event_loop()
-        except RuntimeError as e:
-            logging.error(e)
-            self._loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(self._loop)
+        # NOTE: asyncio's "run_until_complete" function suffices to ensure that we're
+        # not nesting event loops.
+        self._loop = asyncio.new_event_loop()
+        self._loop.slow_callback_duration = 0.5 # Reduce logging noise
 
-        self._loop.run_until_complete(self._async_init(db_name))
+        # create async mongo connections for event loop
+        self._async_db_ro = MongoDBConnection(read_only=True, db=db_name, loop=self._loop)
+        self.async_db_ro = self._async_db_ro.__enter__()
+        self._async_db_rw = MongoDBConnection(read_only=False, db=db_name, loop=self._loop)
+        self.async_db_rw = self._async_db_rw.__enter__()
 
+        # create a task queue for async tasks
+        self._task_q = asyncio.queues.Queue(loop=self._loop)
+
+        # create "workers" which handle async tasks from the task_q
+        # general pattern is to put a series of tasks in the queue, then await task_q.join()
+        # and the workers will complete the tasks.
+        # this is done instead of using asyncio.gather as the event loop will hang if >100s of coroutines/futures
+        # are placed at once, especially if they're I/O related. The epoll (linux) and kqueue (macOS/BSD)
+        # selectors used in the event loop implementation will grind to a halt with too many open sockets, and
+        # as we can have 1000's of requests for a single trial, we need to limit the effective I/O concurrency.
+        # In effect, the effective concurrency is the number of workers.
+        self._workers = {
+            worker_id: self._loop.create_task(self._queue_worker(worker_id))
+            for worker_id in range(0, self.num_workers)
+        }
+
+        self._loop.run_until_complete(self._async_init())
 
     def check_run_log_flags(self,
                             trial_match_collection: str,
@@ -302,29 +327,11 @@ class MatchEngine(object):
                 else:
                     break
 
-    async def _async_init(self, db_name: str):
+    async def _async_init(self):
         """
         Instantiate asynchronous db connections and workers.
         Create a task que which holds all matching and update tasks for processing via workers.
         """
-        # create a task queue for async tasks
-        self._task_q = asyncio.queues.Queue()
-        self._async_db_ro = MongoDBConnection(read_only=True, db=db_name)
-        self.async_db_ro = self._async_db_ro.__enter__()
-        self._async_db_rw = MongoDBConnection(read_only=False, db=db_name)
-        self.async_db_rw = self._async_db_rw.__enter__()
-        # create "workers" which handle async tasks from the task_q
-        # general pattern is to put a series of tasks in the queue, then await task_q.join()
-        # and the workers will complete the tasks.
-        # this is done instead of using asyncio.gather as the event loop will hang if >100s of coroutines/futures
-        # are placed at once, especially if they're I/O related. The epoll (linux) and kqueue (macOS/BSD)
-        # selectors used in the event loop implementation will grind to a halt with too many open sockets, and
-        # as we can have 1000's of requests for a single trial, we need to limit the effective I/O concurrency.
-        # In effect, the effective concurrency is the number of workers.
-        self._workers = {
-            worker_id: self._loop.create_task(self._queue_worker(worker_id))
-            for worker_id in range(0, self.num_workers)
-        }
         self._task_q.put_nowait(CheckIndicesTask())
         await self._task_q.join()
 
@@ -336,48 +343,40 @@ class MatchEngine(object):
         First execute the clinical query. If no records are returned short-circuit and return.
         """
         clinical_ids = set(initial_clinical_ids)
+
         if multi_collection_query.clinical:
-            new_clinical_ids, clinical_match_reasons = await execute_clinical_queries(self,
-                                                                                      multi_collection_query,
-                                                                                      clinical_ids
-                                                                                      if clinical_ids
-                                                                                      else set(
-                                                                                          initial_clinical_ids))
+            new_clinical_ids, clinical_match_reasons = \
+                await execute_clinical_queries(self, multi_collection_query, set(clinical_ids))
+            log.debug(f"Clinical queries narrowed {len(clinical_ids)} samples to {len(new_clinical_ids)}")
             clinical_ids = new_clinical_ids
         else:
             clinical_match_reasons = defaultdict(list)
-        if not clinical_ids:
-            return dict()
+            log.debug("No clinical queries to run")
 
-        if multi_collection_query.extended_attributes:
-            new_clinical_ids, extended_attribute_id_map, all_match_reasons = await (
+        if clinical_ids and multi_collection_query.extended_attributes:
+            new_clinical_ids, _, all_match_reasons = await (
                 execute_extended_queries(self,
                                          multi_collection_query,
-                                         clinical_ids
-                                         if clinical_ids
-                                         else set(
-                                             initial_clinical_ids),
+                                         set(clinical_ids),
                                          clinical_match_reasons)
             )
+            log.debug(f"Extended queries narrowed {len(clinical_ids)} samples to {len(new_clinical_ids)}")
             clinical_ids = new_clinical_ids
-            if not all_match_reasons:
-                return dict()
         else:
-            extended_attribute_id_map = dict()
             all_match_reasons = clinical_match_reasons
+            log.info("No extended queries to run")
 
-        needed_clinical = list(clinical_ids)
-        needed_extended = extended_attribute_id_map
-        results = await get_docs_results(self, needed_clinical, needed_extended)
+        old_len = len(all_match_reasons)
+        for k in list(all_match_reasons.keys()):
+            if k not in clinical_ids:
+                del all_match_reasons[k]
+            if len(all_match_reasons[k]) == 0:
+                del all_match_reasons[k]
+        log.debug(f"Postprocessing narrowed {old_len} samples to {len(all_match_reasons)}")
 
-        # asyncio.gather returns [[],[]]. Save the resulting values on the cache for use when creating trial matches
-        for outer_result in results:
-            for result in outer_result:
-                self.cache.docs[result["_id"]] = result
+        docs = await get_docs_results(self, all_match_reasons)
 
-        valid_reasons = get_valid_reasons(self, all_match_reasons, clinical_ids, extended_attribute_id_map)
-
-        return valid_reasons
+        return all_match_reasons, docs
 
     async def _queue_worker(self, worker_id: int) -> None:
         """
@@ -441,21 +440,35 @@ class MatchEngine(object):
         """
         Synchronously iterates over each protocol number, updating the matches in the database for each
         """
-        updated_time = datetime.datetime.now()
+        log.info("Updating all matches")
+        self.global_update_tracker = UpdateResult()
+
+        log.info("Updating matches for deleted protocols")
+        self.update_trackers_by_protocol['DELETED_PROTOCOLS'] = UpdateResult()
+        updated_time = datetime.datetime.now(datetime.timezone.utc)
         match_identifier = self.match_criteria_transform.match_trial_link_id
         if self._protocol_nos_param is None and not self._drop:
             self.task_q.put_nowait(
                 UpdateTask(
-                    [UpdateMany({match_identifier: {'$nin': self.protocol_nos}},
+                    [UpdateMany({match_identifier: {'$nin': self.protocol_nos}, 'is_disabled': False},
                                 {'$set': {'is_disabled': True, '_updated': updated_time}})],
                     'DELETED_PROTOCOLS'))
-        for protocol_number in self.protocol_nos:
-            if not self.match_on_deceased:
-                for chunk in chunk_list(list(self.clinical_deceased), self.chunk_size):
+        task = self._loop.create_task(self._task_q.join())
+        self._loop.run_until_complete(task)
+        upd = self.update_trackers_by_protocol.pop('DELETED_PROTOCOLS')
+        log.info(f"Updated matches for deleted protocols: {upd.fmt()}")
+
+        log.info("Updating matches for deceased clinical")
+        self.update_trackers_by_protocol['DECEASED_CLINICAL'] = UpdateResult()
+        if not self.match_on_deceased:
+            protocol_chunks = chunk_list(sorted(self.protocol_nos), self.chunk_size)
+            clinical_chunks = chunk_list(sorted(self.clinical_deceased), self.chunk_size)
+            for protocol_number_chunk in protocol_chunks:
+                for clinical_chunk in clinical_chunks:
                     query = {
-                        'clinical_id': {'$in': chunk},
+                        'clinical_id': {'$in': clinical_chunk},
                         'is_disabled': False,
-                        match_identifier: protocol_number
+                        match_identifier: {'$in': protocol_number_chunk}
                     }
                     update = {
                         '$set': {
@@ -464,21 +477,23 @@ class MatchEngine(object):
                         }
                     }
                     self.task_q.put_nowait(UpdateTask([UpdateMany(query, update)],
-                                                      protocol_number))
+                        "DECEASED_CLINICAL"))
+        task = self._loop.create_task(self._task_q.join())
+        self._loop.run_until_complete(task)
+        upd = self.update_trackers_by_protocol.pop('DECEASED_CLINICAL')
+        log.info(f"Updated matches for deceased clinical: {upd.fmt()}")
+
+        for protocol_number in self.protocol_nos:
             self.update_matches_for_protocol_number(protocol_number)
+
+        log.info(f"Updated all matches: {self.global_update_tracker.fmt()}")
+        self.global_update_tracker = None
 
     def get_matches_for_all_trials(self) -> Dict[str, Dict[str, List]]:
         """
         Synchronously iterates over each protocol number, getting trial matches for each
         """
         for protocol_no in self.protocol_nos:
-            if protocol_no not in self._trials_to_match_on:
-                logging.info((f'{self.match_criteria_transform.trial_collection} {protocol_no} '
-                              f'has status {self.trials[protocol_no]["status"]}, skipping'))
-                self._matches[protocol_no] = dict()
-                self._clinical_ids_for_protocol_cache[protocol_no] = self.get_clinical_ids_for_protocol(protocol_no,
-                                                                                                        set())
-                continue
             self.get_matches_for_trial(protocol_no)
         return self._matches
 
@@ -486,7 +501,6 @@ class MatchEngine(object):
         """
         Get the trial matches for a given protocol number
         """
-        log.info(f"Begin {self.match_criteria_transform.trial_identifier}: {protocol_no}")
         task = self._loop.create_task(self._async_get_matches_for_trial(protocol_no))
         return self._loop.run_until_complete(task)
 
@@ -495,50 +509,65 @@ class MatchEngine(object):
         Asynchronous function used by get_matches_for_trial, not meant to be called externally.
         Gets the matches for a given trial
         """
-        # Get each match clause in the trial document
-        trial = self.trials[protocol_no]
-        match_clauses = extract_match_clauses_from_trial(self, protocol_no)
+        trial_coll = self.match_criteria_transform.trial_collection
+        if protocol_no in self._trials_to_match_on:
+            # Get each match clause in the trial document
+            trial = self.trials[protocol_no]
+            match_clauses = extract_match_clauses_from_trial(self, protocol_no)
 
-        # for each match clause, create the match tree, and extract each possible match path from the tree
-        tasks = list()
-        age_criteria = set()
-        for match_clause in match_clauses:
-            match_tree = create_match_tree(self, match_clause)
-            match_paths = get_match_paths(match_tree)
+            # for each match clause, create the match tree, and extract each possible match path from the tree
+            tasks = list()
+            age_criteria = set()
+            for match_clause in match_clauses:
+                match_tree = create_match_tree(self, match_clause)
+                match_paths = get_match_paths(match_tree)
 
-            # for each match path, translate the path into valid mongo queries
-            for match_path in match_paths:
-                query = translate_match_path(self, match_clause, match_path)
-                for criteria_node in match_path.criteria_list:
-                    for criteria in criteria_node.criteria:
-                        # check if node has any age criteria, to know to check for newly qualifying patients
-                        # or patients aging out
-                        for k, v in criteria.get('clinical', dict()).items():
-                            if k.lower() == 'age_numerical':
-                                age_criteria.add(v)
-                if self.debug:
-                    log.info(f"Query: {query}")
-                # put the query onto the task queue for execution
-                tasks.append((trial, match_clause, match_path, query))
+                # for each match path, translate the path into valid mongo queries
+                for match_path in match_paths:
+                    query = translate_match_path(self, match_clause, match_path)
+                    for criteria_node in match_path.criteria_list:
+                        for criteria in criteria_node.criteria:
+                            # check if node has any age criteria, to know to check for newly qualifying patients
+                            # or patients aging out
+                            for k, v in criteria.get('clinical', dict()).items():
+                                if k.lower() == 'age_numerical':
+                                    age_criteria.add(v)
+                    if self.debug:
+                        log.info(f"Query: {query}")
+                    # put the query onto the task queue for execution
+                    tasks.append((trial, match_clause, match_path, query))
+            ignore_clinical_updates = False
+            if not tasks:
+                log.info((f'Not mining matches for {trial_coll} {protocol_no}: no queries to run'))
+        else:
+            status = self.trials[protocol_no].get("status")
+            log.info((f'Not mining matches for {trial_coll} {protocol_no}: has status {status!r}'))
+            age_criteria = set()
+            ignore_clinical_updates = True
+            tasks = []
 
-        clinical_ids_to_run = self.get_clinical_ids_for_protocol(protocol_no, age_criteria)
-        if not self.skip_run_log_entry:
-            self.create_run_log_entry(protocol_no, clinical_ids_to_run)
-        if not clinical_ids_to_run:
-            log.info(f"No need to re-run {self.match_criteria_transform.trial_collection} {protocol_no}; skipping")
-            return {}
-        for task in tasks:
-            self._task_q.put_nowait(QueryTask(*task,
-                                              clinical_ids_to_run))
-        if self.debug:
-            log.info(f"Submitted {self._task_q.qsize()} QueryTasks to queue")
-        if not self._task_q.qsize():
-            self._matches[protocol_no] = dict()
-        await self._task_q.join()
-        logging.info(f"Total patient matches: {len(self._matches.get(protocol_no, dict()))}")
-        logging.info(
-            f"Total {self.trial_match_collection} documents: {sum([len(matches) for matches in self._matches.get(protocol_no, dict()).values()])}")
-        return self._matches.get(protocol_no, dict())
+        clinical_ids_to_run = self.get_clinical_ids_for_protocol(protocol_no, age_criteria, ignore_clinical_updates)
+        self.create_run_log_entry(protocol_no, clinical_ids_to_run)
+
+        if tasks and not clinical_ids_to_run:
+            log.info((f'Not mining matches for {trial_coll} {protocol_no}: no samples to check'))
+            tasks = []
+
+        self._matches[protocol_no] = dict()
+        if tasks:
+            log.info(f"Mining matches for {trial_coll} {protocol_no}: checking {len(clinical_ids_to_run)} of {len(self.clinical_ids)} samples")
+            for task in tasks:
+                self._task_q.put_nowait(QueryTask(*task, clinical_ids_to_run))
+            await self._task_q.join()
+            num_found = sum( 1 for matches in self._matches.get(protocol_no, {}).values() if len(matches) )
+            num_docs = sum( len(matches) for matches in self._matches.get(protocol_no, {}).values() )
+            log.info(f"Mined matches for {trial_coll} {protocol_no}: {num_docs} matches found across {num_found} samples")
+        return self._matches[protocol_no]
+
+    async def record_run_log(self, protocol_no):
+        run_log_collection = f"run_log_{self.trial_match_collection}"
+        if self.clinical_run_log_entries[protocol_no]:
+            await self.async_db_rw[run_log_collection].insert_one(self.run_log_entries[protocol_no])
 
     def _populate_run_log_history(self) -> Dict[str, List[Dict]]:
         """
@@ -579,18 +608,6 @@ class MatchEngine(object):
     def get_clinical_updated_mapping(self) -> Dict[ObjectId: datetime.datetime]:
         return {clinical_id: clinical_data.get('_updated', None) for clinical_id, clinical_data in
                 self._clinical_data.items()}
-
-    def get_clinical_run_log_mapping(self) -> Dict[ObjectId: ObjectId]:
-        output = {
-            result['clinical_id']: result['run_history'] if result['run_history'] else None
-            for result
-            in self.db_ro.get_collection(
-                f"clinical_run_history_{self.trial_match_collection}"
-            ).find({'clinical_id': {"$in": list(self.clinical_ids)}})
-        }
-        for not_present in self.clinical_ids - set(output.keys()):
-            output[not_present] = None
-        return output
 
     def get_clinical_deceased(self) -> Set[ClinicalID]:
         return {clinical_id
@@ -693,13 +710,15 @@ class MatchEngine(object):
                 'workers': self.num_workers,
                 'ignore_run_log': self.ignore_run_log
             },
-            '_created': self.starttime
+            '_created': self.starttime,
+            'start_time_utc': self.start_time_utc,
+            'age_comparison_date': self.age_comparison_date.isoformat()
         }
 
         # set clinical ids run during current run in memory
         self.clinical_run_log_entries[protocol_no] = clinical_ids
 
-    def get_clinical_ids_for_protocol(self, protocol_no: str, age_criterion: Set[str]) -> Set(ObjectId):
+    def get_clinical_ids_for_protocol(self, protocol_no: str, age_criteria: Set[str], ignore_clinical_updates: bool = False) -> Set(ObjectId):
         """
         Take protocol from args and lookup all run_log entries after protocol_no._updated_date.
 
@@ -718,7 +737,7 @@ class MatchEngine(object):
 
         # If trial has not been run, or match on closed flag is passed,
         # use all clinical ids and return
-        if not run_log_entries or (self.match_on_closed and not run_log_entries[0]['run_params']['match_on_closed']):
+        if not run_log_entries:
             self._clinical_ids_for_protocol_cache[protocol_no] = self.clinical_ids
             return self._clinical_ids_for_protocol_cache[protocol_no]
 
@@ -726,60 +745,47 @@ class MatchEngine(object):
         clinical_ids_to_run = set()
 
         for run_log in run_log_entries:
-            # All sample ids are accounted for, short circuit
-            if clinical_ids_to_not_run.union(clinical_ids_to_run) == self.clinical_ids:
-                break
 
             run_log_clinical_ids = run_log['clinical_ids']
             is_all = 'all' in run_log_clinical_ids
-            run_log_created_at = run_log['_created']
-            prev_run_matched_on_deceased = run_log['run_params']['match_on_deceased']
+
+            prev_run_start_time = run_log['_created']
+            if 'start_time_utc' in run_log:
+                prev_run_start_time = run_log['start_time_utc']
+            extra_time = datetime.timedelta(seconds=60) # compensate for any clock skew
+            prev_run_start_time = prev_run_start_time - extra_time
 
             # For all clinical_ids, check if clinical_id has been updated since
             # the last run with current protocol. If it has been updated, run.
-            for clinical_id, updated_at in self.clinical_update_mapping.items():
-                if self.match_on_deceased and clinical_id in self.clinical_deceased and not prev_run_matched_on_deceased:
-                    continue
-                if clinical_id not in self.clinical_ids:
-                    continue
-                if not self.match_on_deceased and clinical_id in self.clinical_deceased:
-                    clinical_ids_to_not_run.add(clinical_id)
-                    continue
-                if updated_at is None:
-                    clinical_ids_to_run.add(clinical_id)
-                elif updated_at > run_log_created_at and clinical_id not in clinical_ids_to_not_run:
-                    if is_all or clinical_id in run_log_clinical_ids['list']:
+            if not ignore_clinical_updates:
+                for clinical_id in self.clinical_ids:
+                    updated_at = self.clinical_update_mapping[clinical_id]
+                    if updated_at is None:
                         clinical_ids_to_run.add(clinical_id)
+                    elif updated_at > prev_run_start_time and clinical_id not in clinical_ids_to_not_run:
+                        if is_all or clinical_id in run_log_clinical_ids['list']:
+                            clinical_ids_to_run.add(clinical_id)
 
-            # Not all clinical_ids will be accounted for after checking the run_log entries.
-            # For the remainder, check if any clinical_ids have aged in/out of eligibility and add
-            # to current run
-            clinical_ids_to_check_for_aging = (self.clinical_ids - clinical_ids_to_run) - \
-                                            (set() if self.match_on_deceased else self.clinical_deceased)
-            newly_qualifying = self.get_newly_qualifying_patients(run_log, age_criterion, clinical_ids_to_check_for_aging)
-            clinical_ids_to_run.update(newly_qualifying)
+            if age_criteria:
+                # Not all clinical_ids will be accounted for after checking the run_log entries.
+                # For the remainder, check if any clinical_ids have aged in/out of eligibility and add
+                # to current run
+                clinical_ids_to_check_for_aging = (self.clinical_ids - clinical_ids_to_run) - \
+                                                (set() if self.match_on_deceased else self.clinical_deceased)
+                newly_qualifying = self.get_newly_qualifying_patients(run_log, age_criteria, clinical_ids_to_check_for_aging)
+                clinical_ids_to_run.update(newly_qualifying)
 
             if is_all:
-                if self.match_on_deceased and not prev_run_matched_on_deceased:
-                    clinical_ids_to_not_run.update(self.clinical_ids - self.clinical_deceased - clinical_ids_to_run)
-                else:
-                    clinical_ids_to_not_run.update(self.clinical_ids - clinical_ids_to_run)
-                continue
-
+                clinical_ids_to_not_run.update(self.clinical_ids - clinical_ids_to_run)
+                break
             elif 'list' in run_log_clinical_ids:
-                if self.match_on_deceased and not prev_run_matched_on_deceased:
-                    run_prev = set(run_log_clinical_ids['list']).intersection(
-                        self.clinical_ids - self.clinical_deceased)
-                    run_now_not_run_prev = self.clinical_ids - run_prev
-                    clinical_ids_to_run.update(run_now_not_run_prev - clinical_ids_to_not_run)
-                    clinical_ids_to_run.update(newly_qualifying)
-                    clinical_ids_to_not_run.update(run_prev - clinical_ids_to_run)
-                else:
-                    run_prev = set(run_log_clinical_ids['list']).intersection(self.clinical_ids)
-                    run_now_not_run_prev = self.clinical_ids - run_prev
-                    clinical_ids_to_run.update(run_now_not_run_prev - clinical_ids_to_not_run)
-                    clinical_ids_to_run.update(newly_qualifying)
-                    clinical_ids_to_not_run.update(run_prev - clinical_ids_to_run)
+                run_prev = set(run_log_clinical_ids['list']).intersection(self.clinical_ids)
+                run_now_not_run_prev = self.clinical_ids - run_prev
+                clinical_ids_to_run.update(run_now_not_run_prev - clinical_ids_to_not_run)
+                clinical_ids_to_not_run.update(run_prev - clinical_ids_to_run)
+                # All sample ids are accounted for, short circuit
+                if clinical_ids_to_not_run.union(clinical_ids_to_run) == self.clinical_ids:
+                    break
 
         if self.match_on_deceased:
             clinical_ids_to_run.update(self.clinical_deceased - clinical_ids_to_not_run)
@@ -809,17 +815,28 @@ class MatchEngine(object):
             '$lt': lambda x, y: x < y,
             '$gt': lambda x, y: x > y
         }
-        run_log_created_at = run_log['_created']
+        prev_run_age_comparison_date = run_log['_created']
+        if 'age_comparison_date' in run_log:
+            prev_run_age_comparison_date = datetime.date.fromisoformat(run_log['age_comparison_date'])
+            if prev_run_age_comparison_date == self.age_comparison_date:
+                log.info('same age comparison date, skipping aging check')
+                return set()
+
+        tacatrs = []
+        tacts = []
+        for idx, age_criteria in enumerate(age_criterion):
+            tacatrs.append(age_range_to_date_query(sample_key=None,
+                trial_value=age_criteria,
+                compare_date=prev_run_age_comparison_date).results)
+            tacts.append(age_range_to_date_query(sample_key=None,
+                trial_value=age_criteria,
+                compare_date=self.age_comparison_date).results)
         for clinical_id in clinical_ids:
             birth_date = self.clinical_birth_dates[clinical_id]
             continue_matching_age = True
-            for age_criteria in age_criterion:
-                translated_age_criteria_at_run = age_range_to_date_query(sample_key=None,
-                                                                         trial_value=age_criteria,
-                                                                         compare_date=run_log_created_at).results
-                translated_age_criteria__today = age_range_to_date_query(sample_key=None,
-                                                                         trial_value=age_criteria,
-                                                                         compare_date=self.starttime).results
+            for idx, age_criteria in enumerate(age_criterion):
+                translated_age_criteria_at_run = tacatrs[idx]
+                translated_age_criteria__today = tacts[idx]
                 if not continue_matching_age:
                     break
                 for at_run, today in zip(translated_age_criteria_at_run, translated_age_criteria__today):
@@ -843,68 +860,9 @@ class MatchEngine(object):
                                 continue_matching_age = False
         return clinical_ids_to_run
 
-    def pre_process_trial_matches(self, trial_match: TrialMatch) -> Dict:
-        """
-        Function which returns required fields for trial_match documents
-        """
-
-        new_trial_match = dict()
-        clinical_doc = self.cache.docs[trial_match.match_reason.clinical_id]
-        new_trial_match.update(self.format_trial_match_k_v(clinical_doc))
-        new_trial_match['clinical_id'] = self.cache.docs[trial_match.match_reason.clinical_id][
-            '_id']
-
-        new_trial_match.update(
-            {
-                'match_level': trial_match.match_clause_data.match_clause_level,
-                'internal_id': trial_match.match_clause_data.internal_id,
-                'reason_type': trial_match.match_reason.reason_name,
-                'q_depth': trial_match.match_reason.depth,
-                'q_width': trial_match.match_reason.width,
-                'code': trial_match.match_clause_data.code,
-                'trial_curation_level_status': 'closed' if trial_match.match_clause_data.is_suspended else 'open',
-                'trial_summary_status': trial_match.match_clause_data.status,
-                'coordinating_center': trial_match.match_clause_data.coordinating_center,
-                'show_in_ui': trial_match.match_reason.show_in_ui,
-                'query_hash': trial_match.match_criterion.hash()
-            })
-
-        # add trial fields except for extras
-        new_trial_match.update({
-            k: v
-            for k, v in trial_match.trial.items()
-            if k not in {'treatment_list', '_summary', 'status', '_elasticsearch', 'match'}
-        })
-
-        new_trial_match.update(
-            {
-                'match_path': '.'.join(
-                    [str(item) for item in trial_match.match_clause_data.parent_path])
-            })
-
-        new_trial_match['combo_coord'] = nested_object_hash(
-            {
-                'query_hash': new_trial_match['query_hash'],
-                'match_path': new_trial_match['match_path'],
-                self.match_criteria_transform.trial_identifier: new_trial_match[
-                    self.match_criteria_transform.trial_identifier]
-            })
-
-        new_trial_match['is_disabled'] = False
-        new_trial_match.pop("_updated", None)
-        new_trial_match.pop("last_updated", None)
-        new_trial_match.pop("_id", None)
-        return new_trial_match
-
-    def format_trial_match_k_v(self, clinical_doc):
-        return {key.lower(): val for key, val in clinical_doc.items() if key != "_id"}
-
-    def create_trial_matches(self, trial_match: TrialMatch, new_trial_match: Dict) -> Dict:
+    def create_trial_matches(self, trial_match: TrialMatch) -> List[Dict]:
         """Stub function to be overriden by plugin"""
-        return dict()
-
-    def results_transformer(self, results: Dict[ClinicalID, List[MatchReason]]):
-        """Stub function to be overriden by plugin"""
+        return []
 
     @property
     def task_q(self):
@@ -913,14 +871,6 @@ class MatchEngine(object):
     @property
     def loop(self):
         return self._loop
-
-    @property
-    def queue_task_count(self):
-        return self._queue_task_count
-
-    @queue_task_count.setter
-    def queue_task_count(self, value):
-        self._queue_task_count = value
 
     @property
     def matches(self):
@@ -970,13 +920,5 @@ class MatchEngine(object):
             self.db_rw.get_collection(self.trial_match_collection).remove(drop_query)
 
     @property
-    def trials_to_match_on(self):
-        return self._trials_to_match_on
-
-    @property
     def drop(self):
         return self._drop
-
-    @property
-    def clinical_ids_for_protocol_cache(self):
-        return self._clinical_ids_for_protocol_cache

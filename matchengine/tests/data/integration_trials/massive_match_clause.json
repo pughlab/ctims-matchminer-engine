@@ -78,7 +78,7 @@
                               {
                                 "genomic": {
                                   "hugo_symbol": "RPA1",
-                                  "true_variant_classification": "Missense_Mutation",
+                                  "variant_classification": "Missense_Mutation",
                                   "protein_change": "p.A466G"
                                 }
                               },
@@ -123,7 +123,7 @@
                                   {
                                     "genomic": {
                                       "hugo_symbol": "RPA1",
-                                      "true_variant_classification": "!Missense_Mutation",
+                                      "variant_classification": "!Missense_Mutation",
                                       "protein_change": "!p.A466G"
                                     }
                                   },

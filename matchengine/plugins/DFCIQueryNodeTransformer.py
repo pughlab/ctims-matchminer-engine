@@ -32,7 +32,7 @@ def get_sv_query_value_and_field_name(left_side: Union[str, None],
     sides = [
         left_side, right_side
     ]
-    forward_fields = ['LEFT_PARTNER_GENE', 'RIGHT_PARTNER_GENE']
+    forward_fields = ['HARMONIZED_LEFT_PARTNER_GENE', 'HARMONIZED_RIGHT_PARTNER_GENE']
     backward_fields = forward_fields[::-1]
     fields = (forward_fields
               if sv_query_type == 'LEFT-RIGHT'
@@ -110,11 +110,11 @@ class DFCIQueryNodeTransformer(QueryNodeTransformer):
         whole_query = query_node.extract_raw_query()
         # encode as full search criteria
         if 'STRUCTURAL_VARIANT_COMMENT' in whole_query:
-            for do_not_render_part_name in ['TRUE_HUGO_SYMBOL', 'FUSION_PARTNER_HUGO_SYMBOL']:
+            for do_not_render_part_name in ['HARMONIZED_HUGO_SYMBOL', 'FUSION_PARTNER_HUGO_SYMBOL']:
                 do_not_render_part = query_node.get_query_part_by_key(do_not_render_part_name)
                 if do_not_render_part is not None:
                     do_not_render_part.render = False
-            gene = whole_query.get('TRUE_HUGO_SYMBOL')
+            gene = whole_query.get('HARMONIZED_HUGO_SYMBOL')
             sv_part = query_node.get_query_part_by_key('STRUCTURAL_VARIANT_COMMENT')
             if 'STRUCTURED_SV' in whole_query:
                 sv_part.mcq_invalidating = True
@@ -130,9 +130,9 @@ class DFCIQueryNodeTransformer(QueryNodeTransformer):
         elif 'STRUCTURED_SV' in whole_query:
             sv_info_part = query_node.get_query_part_by_key('STRUCTURED_SV')
             sv_info_part.render = False
-            left = query_node.get_query_part_value_by_key('TRUE_HUGO_SYMBOL', None)
+            left = query_node.get_query_part_value_by_key('HARMONIZED_HUGO_SYMBOL', None)
             right = query_node.get_query_part_value_by_key('FUSION_PARTNER_HUGO_SYMBOL', None)
-            for do_not_render_part_name in ['TRUE_HUGO_SYMBOL', 'FUSION_PARTNER_HUGO_SYMBOL']:
+            for do_not_render_part_name in ['HARMONIZED_HUGO_SYMBOL', 'FUSION_PARTNER_HUGO_SYMBOL']:
                 do_not_render_part = query_node.get_query_part_by_key(do_not_render_part_name)
                 if do_not_render_part is not None:
                     do_not_render_part.render = False
@@ -146,16 +146,16 @@ class DFCIQueryNodeTransformer(QueryNodeTransformer):
                                                 True,
                                                 False))
 
-        # if signature curation is passed, do not query TRUE_HUGO_SYMBOL
+        # if signature curation is passed, do not query HARMONIZED_HUGO_SYMBOL
         if {
             'UVA_STATUS',
-            'TABACCO_STATUS',
+            'TOBACCO_STATUS',
             'POLE_STATUS',
             'TEMOZOLOMIDE_STATUS',
             'MMR_STATUS',
             'APOBEC_STATUS'
         }.intersection(set(whole_query.keys())):
-            gene_part = query_node.get_query_part_by_key('TRUE_HUGO_SYMBOL')
+            gene_part = query_node.get_query_part_by_key('HARMONIZED_HUGO_SYMBOL')
             if gene_part is not None:
                 gene_part.render = False
 

@@ -7,32 +7,18 @@ from bson import ObjectId
 
 from matchengine.internals.database_connectivity.mongo_connection import MongoDBConnection
 from matchengine.internals.engine import MatchEngine
-import matchengine.main
-import matchengine.internals
-import matchengine.internals.utilities
-import matchengine.internals.database_connectivity
-import matchengine.internals.plugin_helpers
-import matchengine.internals.typing
-import matchengine.config
-import matchengine.plugins
-import matchengine
-import matchengine.tests
-import motor
-import pymongo
 
-import matchengine
 from matchengine.tests.timetravel_and_override import unoverride_datetime, set_static_date_time
 
 
 class RunLogTest(TestCase):
     """
     The run_log is a log which keeps track of protocols and sample ID's used by the engine
-    in previous runs, by protocol. There are four sources used to determine if any trial and/or
+    in previous runs, by protocol. There are three sources used to determine if any trial and/or
     sample should be updated during any given matchengine run. Those sources are the:
         (1) run_log,
         (2) trial _updated fields
         (3) clinical _updated fields,
-        (4) clinical_run_history_trial_match
 
     Running and updating only the necessary trials and patients is the default behavior of the
     matchengine unless otherwise specified through a CLI flag. These tests enumerate many
@@ -56,12 +42,12 @@ class RunLogTest(TestCase):
             assert setup_db.name == 'integration'
 
             if not kwargs.get("skip_sample_id_reset", False):
-                setup_db.clinical.update({"SAMPLE_ID": "5d2799d86756630d8dd065b8"},
+                setup_db.clinical.update_many({"SAMPLE_ID": "5d2799d86756630d8dd065b8"},
                                          {"$set": {"ONCOTREE_PRIMARY_DIAGNOSIS_NAME": "Non-Small Cell Lung Cancer",
                                                    "_updated": datetime.datetime(2001, 1, 1, 1, 1, 1, 1)}})
 
             if not kwargs.get("skip_vital_status_reset", False):
-                setup_db.clinical.update({"SAMPLE_ID": "5d2799da6756630d8dd066a6"},
+                setup_db.clinical.update_many({"SAMPLE_ID": "5d2799da6756630d8dd066a6"},
                                          {"$set": {"VITAL_STATUS": "alive",
                                                    "_updated": datetime.datetime(2001, 1, 1, 1, 1, 1, 1)}})
 
@@ -82,9 +68,7 @@ class RunLogTest(TestCase):
                 for trial_path in trials_to_load:
                     with open(trial_path) as trial_file_handle:
                         trial = json.load(trial_file_handle)
-                    setup_db.trial.insert(trial)
-            if kwargs.get('do_rm_clinical_run_history', False):
-                setup_db.clinical_run_history_trial_match.drop()
+                    setup_db.trial.insert_one(trial)
 
         if hasattr(self, 'me'):
             self.me.__exit__(None, None, None)
@@ -126,7 +110,7 @@ class RunLogTest(TestCase):
                     dt = run_log_entry['_created']
                     run_log_entry['_created'] = datetime.datetime(*dt.timetuple()[0:6])
 
-    def test_run_log_1(self):
+    def test_updated_sample_updated_trial_new_match_hashes(self):
         """
         Updated sample, updated curation, trial matches before, trial matches after, but different hashes
         :return:
@@ -135,7 +119,6 @@ class RunLogTest(TestCase):
         self._reset(
             do_reset_trial_matches=True,
             do_reset_trials=True,
-            do_rm_clinical_run_history=True,
             trials_to_load=['run_log_arm_closed'],
             reset_run_log=True,
             match_on_closed=False,
@@ -144,18 +127,16 @@ class RunLogTest(TestCase):
             skip_vital_status_reset=False
         )
         assert self.me.db_rw.name == 'integration'
-        self.me.db_rw.clinical.update({"SAMPLE_ID": "5d2799d86756630d8dd065b8"},
+        self.me.db_rw.clinical.update_many({"SAMPLE_ID": "5d2799d86756630d8dd065b8"},
                                       {"$set": {"ONCOTREE_PRIMARY_DIAGNOSIS_NAME": "Gibberish",
                                                 "_updated": datetime.datetime.now()}})
         self.me.get_matches_for_all_trials()
         self.me.update_all_matches()
         trial_matches = list(self.me.db_ro.trial_match.find())
         run_log_trial_match = list(self.me.db_ro.run_log_trial_match.find())
-        clinical_run_history_trial_match = list(self.me.db_ro.clinical_run_history_trial_match.find())
         assert len(list(self.me.db_ro.trial_match.find({"clinical_id": ObjectId("5d3778bf4fbf195d68cdf4d5")}))) == 0
         assert len(trial_matches) == 0
         assert len(run_log_trial_match) == 1
-        assert len(clinical_run_history_trial_match) == 1392
 
         self._reset(
             do_reset_trial_matches=False,
@@ -164,7 +145,6 @@ class RunLogTest(TestCase):
             reset_run_log=False,
             match_on_closed=False,
             match_on_deceased=False,
-            do_rm_clinical_run_history=False,
             do_reset_time=False,
             report_all_clinical=False,
             skip_sample_id_reset=False
@@ -174,14 +154,10 @@ class RunLogTest(TestCase):
         self.me.update_all_matches()
         trial_matches = list(self.me.db_ro.trial_match.find())
         run_log_trial_match = list(self.me.db_ro.run_log_trial_match.find({}))
-        clinical_run_history_trial_match = list(
-            self.me.db_ro.clinical_run_history_trial_match.find({'clinical_id': ObjectId("5d2799d86756630d8dd065b8")})
-        )[0]
         assert len(trial_matches) == 3
         assert len(run_log_trial_match) == 2
-        assert len(clinical_run_history_trial_match['run_history']) == 2
         assert len(list(self.me.db_ro.trial_match.find({"clinical_id": ObjectId("5d3778bf4fbf195d68cdf4d5")}))) == 0
-        self.me.db_rw.clinical.update({"SAMPLE_ID": "5d2799d86756630d8dd065b8"},
+        self.me.db_rw.clinical.update_many({"SAMPLE_ID": "5d2799d86756630d8dd065b8"},
                                       {"$set": {"ONCOTREE_PRIMARY_DIAGNOSIS_NAME": "Lung Adenocarcinoma",
                                                 "_updated": datetime.datetime(2002, 1, 1, 1, 1, 1, 1)}})
 
@@ -192,7 +168,6 @@ class RunLogTest(TestCase):
             trials_to_load=["run_log_arm_open_criteria_change"],
             match_on_closed=False,
             match_on_deceased=False,
-            do_rm_clinical_run_history=False,
             do_reset_time=False,
             report_all_clinical=False,
             skip_sample_id_reset=True
@@ -203,16 +178,12 @@ class RunLogTest(TestCase):
         trial_matches = list(self.me.db_ro.trial_match.find())
         disabled_trial_matches = list(self.me.db_ro.trial_match.find({"is_disabled": True}))
         run_log_trial_match = list(self.me.db_ro.run_log_trial_match.find({}))
-        clinical_run_history_trial_match = list(
-            self.me.db_ro.clinical_run_history_trial_match.find({'clinical_id': ObjectId("5d2799d86756630d8dd065b8")})
-        )[0]
         assert len(trial_matches) == 4
         assert len(disabled_trial_matches) == 1
         assert len(run_log_trial_match) == 3
         assert len(list(self.me.db_ro.trial_match.find({"clinical_id": ObjectId("5d3778bf4fbf195d68cdf4d5")}))) == 0
-        assert len(clinical_run_history_trial_match['run_history']) == 3
 
-    def test_run_log_2(self):
+    def test_updated_sample_updated_trial_new_matches(self):
         """
         Updated sample, updated curation, trial matches after, but not before
         :return:
@@ -225,23 +196,19 @@ class RunLogTest(TestCase):
             reset_run_log=True,
             match_on_closed=False,
             match_on_deceased=False,
-            do_rm_clinical_run_history=True,
             report_all_clinical=False
         )
         assert self.me.db_rw.name == 'integration'
-        self.me.db_rw.clinical.update({"SAMPLE_ID": "5d2799d86756630d8dd065b8"},
+        self.me.db_rw.clinical.update_many({"SAMPLE_ID": "5d2799d86756630d8dd065b8"},
                                       {"$set": {"ONCOTREE_PRIMARY_DIAGNOSIS_NAME": "Gibberish",
                                                 "_updated": datetime.datetime.now()}})
         self.me.get_matches_for_all_trials()
         self.me.update_all_matches()
         trial_matches = list(self.me.db_ro.trial_match.find())
         run_log_trial_match = list(self.me.db_ro.run_log_trial_match.find())
-        clinical_run_history_trial_match = list(self.me.db_ro.clinical_run_history_trial_match.find())
-        assert len(list(self.me.db_ro.trial_match.find({"clinical_id": ObjectId("5d3778bf4fbf195d68cdf4d5")}))) == 0
         assert len(trial_matches) == 0
         assert len(run_log_trial_match) == 1
-        assert len(clinical_run_history_trial_match) == 1392
-        self.me.db_rw.clinical.update({"SAMPLE_ID": "5d2799d86756630d8dd065b8"},
+        self.me.db_rw.clinical.update_many({"SAMPLE_ID": "5d2799d86756630d8dd065b8"},
                                       {"$set": {"ONCOTREE_PRIMARY_DIAGNOSIS_NAME": "Medullary Carcinoma of the Colon",
                                                 "_updated": datetime.datetime(2002, 1, 1, 1, 1, 1, 1)}})
 
@@ -252,7 +219,6 @@ class RunLogTest(TestCase):
             reset_run_log=False,
             match_on_closed=False,
             match_on_deceased=False,
-            do_rm_clinical_run_history=False,
             do_reset_time=False,
             report_all_clinical=False,
             skip_sample_id_reset=True
@@ -262,12 +228,8 @@ class RunLogTest(TestCase):
         self.me.update_all_matches()
         trial_matches = list(self.me.db_ro.trial_match.find())
         run_log_trial_match = list(self.me.db_ro.run_log_trial_match.find({}))
-        clinical_run_history_trial_match = list(
-            self.me.db_ro.clinical_run_history_trial_match.find({'clinical_id': ObjectId("5d2799d86756630d8dd065b8")})
-        )[0]
         assert len(trial_matches) == 2
         assert len(run_log_trial_match) == 2
-        assert len(clinical_run_history_trial_match['run_history']) == 2
         assert len(list(self.me.db_ro.trial_match.find({"clinical_id": ObjectId("5d3778bf4fbf195d68cdf4d5")}))) == 0
 
         self._reset(
@@ -277,7 +239,6 @@ class RunLogTest(TestCase):
             trials_to_load=["run_log_arm_open_criteria_change"],
             match_on_closed=False,
             match_on_deceased=False,
-            do_rm_clinical_run_history=False,
             do_reset_time=False,
             report_all_clinical=False,
             skip_sample_id_reset=False
@@ -288,16 +249,12 @@ class RunLogTest(TestCase):
         trial_matches = list(self.me.db_ro.trial_match.find())
         disabled_trial_matches = list(self.me.db_ro.trial_match.find({"is_disabled": True}))
         run_log_trial_match = list(self.me.db_ro.run_log_trial_match.find({}))
-        clinical_run_history_trial_match = list(
-            self.me.db_ro.clinical_run_history_trial_match.find({'clinical_id': ObjectId("5d2799d86756630d8dd065b8")})
-        )[0]
         assert len(trial_matches) == 3
         assert len(disabled_trial_matches) == 0
         assert len(run_log_trial_match) == 3
         assert len(list(self.me.db_ro.trial_match.find({"clinical_id": ObjectId("5d3778bf4fbf195d68cdf4d5")}))) == 0
-        assert len(clinical_run_history_trial_match['run_history']) == 3
 
-    def test_run_log_3(self):
+    def test_sample_update_new_match(self):
         """
         Updated sample leads to new trial match
         Existing sample not updated does not cause new trial matches
@@ -312,22 +269,19 @@ class RunLogTest(TestCase):
             reset_run_log=True,
             match_on_closed=True,
             match_on_deceased=False,
-            do_rm_clinical_run_history=True,
             report_all_clinical=False
         )
         assert self.me.db_rw.name == 'integration'
-        self.me.db_rw.clinical.update({"SAMPLE_ID": "5d2799d86756630d8dd065b8"},
+        self.me.db_rw.clinical.update_many({"SAMPLE_ID": "5d2799d86756630d8dd065b8"},
                                       {"$set": {"ONCOTREE_PRIMARY_DIAGNOSIS_NAME": "Gibberish",
                                                 "_updated": datetime.datetime.now()}})
         self.me.get_matches_for_all_trials()
         self.me.update_all_matches()
         trial_matches = list(self.me.db_ro.trial_match.find())
         run_log_trial_match = list(self.me.db_ro.run_log_trial_match.find())
-        clinical_run_history_trial_match = list(self.me.db_ro.clinical_run_history_trial_match.find())
         assert len(list(self.me.db_ro.trial_match.find({"clinical_id": ObjectId("5d3778bf4fbf195d68cdf4d5")}))) == 0
         assert len(trial_matches) == 2
         assert len(run_log_trial_match) == 1
-        assert len(clinical_run_history_trial_match) == 1392
 
         self._reset(
             do_reset_trial_matches=False,
@@ -335,7 +289,6 @@ class RunLogTest(TestCase):
             reset_run_log=False,
             match_on_closed=True,
             match_on_deceased=False,
-            do_rm_clinical_run_history=False,
             do_reset_time=False,
             report_all_clinical=False,
             skip_sample_id_reset=False
@@ -345,12 +298,8 @@ class RunLogTest(TestCase):
         self.me.update_all_matches()
         trial_matches = list(self.me.db_ro.trial_match.find())
         run_log_trial_match = list(self.me.db_ro.run_log_trial_match.find({}))
-        clinical_run_history_trial_match = list(
-            self.me.db_ro.clinical_run_history_trial_match.find({'clinical_id': ObjectId("5d2799d86756630d8dd065b8")})
-        )[0]
         assert len(trial_matches) == 3
         assert len(run_log_trial_match) == 2
-        assert len(clinical_run_history_trial_match['run_history']) == 2
         assert len(list(self.me.db_ro.trial_match.find({"clinical_id": ObjectId("5d3778bf4fbf195d68cdf4d5")}))) == 0
 
         self._reset(
@@ -359,12 +308,11 @@ class RunLogTest(TestCase):
             reset_run_log=False,
             match_on_closed=True,
             match_on_deceased=False,
-            do_rm_clinical_run_history=False,
             do_reset_time=False,
             report_all_clinical=False,
             skip_sample_id_reset=False
         )
-        self.me.db_rw.clinical.update({"SAMPLE_ID": "5d2799d86756630d8dd065b8"},
+        self.me.db_rw.clinical.update_many({"SAMPLE_ID": "5d2799d86756630d8dd065b8"},
                                       {"$set": {"ONCOTREE_PRIMARY_DIAGNOSIS_NAME": "Gibberish",
                                                 "_updated": datetime.datetime(2002, 1, 1, 1, 1, 1, 1)}})
 
@@ -373,16 +321,12 @@ class RunLogTest(TestCase):
         trial_matches = list(self.me.db_ro.trial_match.find())
         disabled_trial_matches = list(self.me.db_ro.trial_match.find({"is_disabled": True}))
         run_log_trial_match = list(self.me.db_ro.run_log_trial_match.find({}))
-        clinical_run_history_trial_match = list(
-            self.me.db_ro.clinical_run_history_trial_match.find({'clinical_id': ObjectId("5d2799d86756630d8dd065b8")})
-        )[0]
         assert len(trial_matches) == 3
         assert len(disabled_trial_matches) == 1
         assert len(run_log_trial_match) == 3
         assert len(list(self.me.db_ro.trial_match.find({"clinical_id": ObjectId("5d3778bf4fbf195d68cdf4d5")}))) == 0
-        assert len(clinical_run_history_trial_match['run_history']) == 3
 
-    def test_run_log_4(self):
+    def test_trial_update_sample_update_no_changes_1(self):
         """
         Update a trial field not used in matching.
         Samples who have matches should continue to have matches.
@@ -396,7 +340,6 @@ class RunLogTest(TestCase):
             reset_run_log=True,
             match_on_closed=True,
             match_on_deceased=False,
-            do_rm_clinical_run_history=True,
             report_all_clinical=False
         )
         assert self.me.db_rw.name == 'integration'
@@ -418,13 +361,12 @@ class RunLogTest(TestCase):
             reset_run_log=False,
             match_on_closed=True,
             match_on_deceased=False,
-            do_rm_clinical_run_history=False,
             do_reset_time=False,
             report_all_clinical=False,
             skip_sample_id_reset=False
         )
 
-        self.me.db_rw.trial.update({"protocol_no": "10-007"},
+        self.me.db_rw.trial.update_many({"protocol_no": "10-007"},
                                    {"$set": {"unused_field": "ricky_bobby",
                                              "_updated": datetime.datetime(2002, 1, 1, 1, 1, 1, 1)
                                              }})
@@ -439,7 +381,7 @@ class RunLogTest(TestCase):
         assert len(run_log_trial_match) == 2
         assert len(non_match) == 0
 
-    def test_run_log_5(self):
+    def test_trial_update_and_sample_update_no_changes(self):
         """
         Update a trial arm status field. Update a sample.
         After update sample with matches should continue to have matches.
@@ -453,7 +395,6 @@ class RunLogTest(TestCase):
             reset_run_log=True,
             match_on_closed=False,
             match_on_deceased=False,
-            do_rm_clinical_run_history=True,
             report_all_clinical=False
         )
         assert self.me.db_rw.name == 'integration'
@@ -478,23 +419,22 @@ class RunLogTest(TestCase):
             reset_run_log=False,
             match_on_closed=False,
             match_on_deceased=False,
-            do_rm_clinical_run_history=False,
             do_reset_time=False,
             report_all_clinical=False,
             skip_sample_id_reset=False
         )
 
-        self.me.db_rw.trial.update({"protocol_no": "10-007"},
+        self.me.db_rw.trial.update_many({"protocol_no": "10-007"},
                                    {"$set": {"treatment_list.step.0.arm.1.arm_suspended": "N",
                                              "_updated": datetime.datetime(2002, 1, 1, 1, 1, 1, 1)
                                              }})
         # update non-match
-        self.me.db_rw.clinical.update({"SAMPLE_ID": "5d2799df6756630d8dd068bb"},
+        self.me.db_rw.clinical.update_many({"SAMPLE_ID": "5d2799df6756630d8dd068bb"},
                                       {"$set": {"ONCOTREE_PRIMARY_DIAGNOSIS_NAME": "Gibberish",
                                                 "_updated": datetime.datetime.now()}})
 
         # update matching
-        self.me.db_rw.genomic.insert({
+        self.me.db_rw.genomic.insert_one({
             "SAMPLE_ID": "5d2799da6756630d8dd066a6",
             "clinical_id": ObjectId("5d2799da6756630d8dd066a6"),
             "_updated": datetime.datetime(2002, 1, 1, 1, 1, 1, 1),
@@ -515,9 +455,9 @@ class RunLogTest(TestCase):
         assert len(run_log_trial_match) == 2
         assert len(non_match) == 0
 
-        self.me.db_rw.genomic.remove({"TRUE_HUGO_SYMBOL": "sonic_the_hedgehog"})
+        self.me.db_rw.genomic.delete_many({"TRUE_HUGO_SYMBOL": "sonic_the_hedgehog"})
 
-    def test_run_log_6(self):
+    def test_trial_update_and_patient_expiring_1(self):
         """
         Update a trial arm status field.
         Update a sample's vital_status to deceased.
@@ -531,7 +471,6 @@ class RunLogTest(TestCase):
             reset_run_log=True,
             match_on_closed=False,
             match_on_deceased=False,
-            do_rm_clinical_run_history=True,
             report_all_clinical=False
         )
         assert self.me.db_rw.name == 'integration'
@@ -551,18 +490,17 @@ class RunLogTest(TestCase):
             reset_run_log=False,
             match_on_closed=False,
             match_on_deceased=False,
-            do_rm_clinical_run_history=False,
             do_reset_time=False,
             report_all_clinical=False,
             skip_sample_id_reset=False
         )
 
-        self.me.db_rw.trial.update({"protocol_no": "10-007"},
+        self.me.db_rw.trial.update_many({"protocol_no": "10-007"},
                                    {"$set": {"treatment_list.step.0.arm.1.arm_suspended": "N",
                                              "_updated": datetime.datetime(2002, 1, 1, 1, 1, 1, 1)
                                              }})
 
-        self.me.db_rw.clinical.update({"SAMPLE_ID": "5d2799da6756630d8dd066a6"},
+        self.me.db_rw.clinical.update_many({"SAMPLE_ID": "5d2799da6756630d8dd066a6"},
                                       {"$set": {"VITAL_STATUS": "deceased",
                                                 "_updated": datetime.datetime(2002, 1, 1, 1, 1, 1, 1)
                                                 }})
@@ -584,13 +522,12 @@ class RunLogTest(TestCase):
             reset_run_log=False,
             match_on_closed=False,
             match_on_deceased=False,
-            do_rm_clinical_run_history=False,
             do_reset_time=False,
             report_all_clinical=False,
             skip_sample_id_reset=False
         )
 
-        self.me.db_rw.trial.update({"protocol_no": "10-007"},
+        self.me.db_rw.trial.update_many({"protocol_no": "10-007"},
                                    {"$set": {"unused_field": "ricky_bobby",
                                              "_updated": datetime.datetime(2002, 2, 1, 1, 1, 1, 1)
                                              }})
@@ -606,7 +543,7 @@ class RunLogTest(TestCase):
         assert len(disabled_trial_matches) == 2
         assert len(run_log_trial_match) == 3
 
-    def test_run_log_7(self):
+    def test_trial_update_and_patient_expiring(self):
         """
         Update a trial curation.
         Update a sample's vital_status to deceased.
@@ -620,7 +557,6 @@ class RunLogTest(TestCase):
             reset_run_log=True,
             match_on_closed=False,
             match_on_deceased=False,
-            do_rm_clinical_run_history=True,
             report_all_clinical=False
         )
         assert self.me.db_rw.name == 'integration'
@@ -640,17 +576,16 @@ class RunLogTest(TestCase):
             reset_run_log=False,
             match_on_closed=False,
             match_on_deceased=False,
-            do_rm_clinical_run_history=False,
             do_reset_time=False,
             report_all_clinical=False,
             skip_sample_id_reset=False
         )
 
-        self.me.db_rw.trial.update({"protocol_no": "10-007"},
+        self.me.db_rw.trial.update_many({"protocol_no": "10-007"},
                                    {"$set": {"treatment_list.step.0.arm.0.match.0.and.0.hugo_symbol": "BRAF",
                                              "_updated": datetime.datetime(2002, 1, 1, 1, 1, 1, 1)}})
 
-        self.me.db_rw.clinical.update({"SAMPLE_ID": "5d2799da6756630d8dd066a6"},
+        self.me.db_rw.clinical.update_many({"SAMPLE_ID": "5d2799da6756630d8dd066a6"},
                                       {"$set": {"VITAL_STATUS": "deceased",
                                                 "_updated": datetime.datetime(2002, 1, 1, 1, 1, 1, 1)}})
 
@@ -665,7 +600,7 @@ class RunLogTest(TestCase):
         assert len(disabled_trial_matches) == 2
         assert len(run_log_trial_match) == 2
 
-    def test_run_log_8(self):
+    def test_patient_expiring(self):
         """
         Update a sample's vital_status to deceased.
         Sample should have matches before run and not after.
@@ -678,7 +613,6 @@ class RunLogTest(TestCase):
             reset_run_log=True,
             match_on_closed=False,
             match_on_deceased=False,
-            do_rm_clinical_run_history=True,
             report_all_clinical=False
         )
         assert self.me.db_rw.name == 'integration'
@@ -697,7 +631,7 @@ class RunLogTest(TestCase):
         assert len(disabled_trial_matches) == 0
         assert len(run_log_trial_match) == 1
 
-        self.me.db_rw.clinical.update({"SAMPLE_ID": "5d2799da6756630d8dd066a6"},
+        self.me.db_rw.clinical.update_many({"SAMPLE_ID": "5d2799da6756630d8dd066a6"},
                                       {"$set": {"VITAL_STATUS": "deceased",
                                                 "_updated": datetime.datetime(2002, 2, 1, 1, 1, 1, 1)}})
 
@@ -707,7 +641,6 @@ class RunLogTest(TestCase):
             reset_run_log=False,
             match_on_closed=False,
             match_on_deceased=False,
-            do_rm_clinical_run_history=False,
             do_reset_time=False,
             report_all_clinical=False,
             skip_sample_id_reset=False,
@@ -727,11 +660,11 @@ class RunLogTest(TestCase):
         assert len(disabled_trial_matches) == 2
         assert len(run_log_trial_match) == 2
 
-        self.me.db_rw.clinical.update({"SAMPLE_ID": "5d2799da6756630d8dd066a6"},
+        self.me.db_rw.clinical.update_many({"SAMPLE_ID": "5d2799da6756630d8dd066a6"},
                                       {"$set": {"VITAL_STATUS": "alive",
                                                 "_updated": datetime.datetime(2002, 2, 1, 1, 1, 1, 1)}})
 
-    def test_run_log_9(self):
+    def test_trial_arm_opening(self):
         """
         Update a trial arm status to open.
         Run on a new sample.
@@ -746,7 +679,6 @@ class RunLogTest(TestCase):
             reset_run_log=True,
             match_on_closed=False,
             match_on_deceased=False,
-            do_rm_clinical_run_history=True,
             report_all_clinical=False
         )
         assert self.me.db_rw.name == 'integration'
@@ -764,7 +696,7 @@ class RunLogTest(TestCase):
         assert len(no_match) == 0
         assert len(known_match) == 0
 
-        self.me.db_rw.trial.update({"protocol_no": "10-001"},
+        self.me.db_rw.trial.update_many({"protocol_no": "10-001"},
                                    {"$set": {"treatment_list.step.0.arm.0.arm_suspended": "N",
                                              "_updated": datetime.datetime(2002, 1, 1, 1, 1, 1, 1)
                                              }})
@@ -775,7 +707,6 @@ class RunLogTest(TestCase):
             reset_run_log=False,
             match_on_closed=False,
             match_on_deceased=False,
-            do_rm_clinical_run_history=False,
             do_reset_time=False,
             report_all_clinical=False,
             skip_sample_id_reset=False
@@ -794,7 +725,7 @@ class RunLogTest(TestCase):
         assert len(no_match) == 0
         assert len(known_match) == 1
 
-    def test_run_log_10(self):
+    def test_new_sample_matches(self):
         """
         Update a trial field not used in matching.
         Run on a new sample.
@@ -809,7 +740,6 @@ class RunLogTest(TestCase):
             reset_run_log=True,
             match_on_closed=False,
             match_on_deceased=False,
-            do_rm_clinical_run_history=True,
             report_all_clinical=False
         )
         assert self.me.db_rw.name == 'integration'
@@ -825,7 +755,7 @@ class RunLogTest(TestCase):
         assert len(run_log_trial_match) == 1
         assert len(no_match) == 0
 
-        self.me.db_rw.trial.update({"protocol_no": "10-001"},
+        self.me.db_rw.trial.update_many({"protocol_no": "10-001"},
                                    {"$set": {"unused_field": "ricky_bobby",
                                              "_updated": datetime.datetime(2002, 1, 1, 1, 1, 1, 1)
                                              }})
@@ -836,7 +766,6 @@ class RunLogTest(TestCase):
             reset_run_log=False,
             match_on_closed=False,
             match_on_deceased=False,
-            do_rm_clinical_run_history=False,
             do_reset_time=False,
             report_all_clinical=False,
             skip_sample_id_reset=False
@@ -853,7 +782,59 @@ class RunLogTest(TestCase):
         assert len(run_log_trial_match) == 2
         assert len(no_match) == 0
 
-    def test_run_log_11(self):
+    def test_open_arm_closing(self):
+        """
+        Run engine on open trials and find matches
+        Close trial
+        Run engine again
+        Trial matches should be disabled
+        :return:
+        """
+        self._reset(
+            do_reset_trial_matches=True,
+            do_reset_trials=True,
+            trials_to_load=['run_log_arm_open'],
+            reset_run_log=True,
+            match_on_closed=False,
+            match_on_deceased=False,
+            report_all_clinical=False
+        )
+        assert self.me.db_rw.name == 'integration'
+
+        self.me.get_matches_for_all_trials()
+        self.me.update_all_matches()
+        enabled_trial_matches = list(self.me.db_ro.trial_match.find({"is_disabled": False}))
+        disabled_trial_matches = list(self.me.db_ro.trial_match.find({"is_disabled": True}))
+
+        assert len(enabled_trial_matches) == 3
+        assert len(disabled_trial_matches) == 0
+
+        self.me.db_rw.trial.update_many({"protocol_no": "10-002"},
+                                   {"$set": {"status": "closed to accrual",
+                                             "_summary.status": [{'value': 'closed to accrual'}],
+                                             "_updated": datetime.datetime(2002, 1, 1, 1, 1, 1, 1)
+                                             }})
+
+        self._reset(
+            do_reset_trial_matches=False,
+            do_reset_trials=False,
+            reset_run_log=False,
+            match_on_closed=False,
+            match_on_deceased=False,
+            do_reset_time=False,
+            report_all_clinical=False,
+            skip_sample_id_reset=False
+        )
+
+        self.me.get_matches_for_all_trials()
+        self.me.update_all_matches()
+        enabled_trial_matches = list(self.me.db_ro.trial_match.find({"is_disabled": False}))
+        disabled_trial_matches = list(self.me.db_ro.trial_match.find({"is_disabled": True}))
+
+        assert len(enabled_trial_matches) == 0
+        assert len(disabled_trial_matches) == 3
+
+    def test_patient_expiring_no_matches(self):
         """
         Update a sample's vital_status to deceased.
         Sample should not have matches before or after run.
@@ -867,7 +848,6 @@ class RunLogTest(TestCase):
             reset_run_log=True,
             match_on_closed=False,
             match_on_deceased=False,
-            do_rm_clinical_run_history=True,
             report_all_clinical=False
         )
         assert self.me.db_rw.name == 'integration'
@@ -879,7 +859,7 @@ class RunLogTest(TestCase):
         assert len(no_match) == 0
         assert len(run_log_trial_match) == 1
 
-        self.me.db_rw.clinical.update({"SAMPLE_ID": "5d2799da6756630d8dd066a6"},
+        self.me.db_rw.clinical.update_many({"SAMPLE_ID": "5d2799da6756630d8dd066a6"},
                                       {"$set": {"VITAL_STATUS": "deceased",
                                                 "_updated": datetime.datetime(2002, 2, 1, 1, 1, 1, 1)}})
 
@@ -889,7 +869,6 @@ class RunLogTest(TestCase):
             reset_run_log=False,
             match_on_closed=False,
             match_on_deceased=False,
-            do_rm_clinical_run_history=False,
             do_reset_time=False,
             report_all_clinical=False,
             skip_sample_id_reset=False,
@@ -909,7 +888,6 @@ class RunLogTest(TestCase):
             reset_run_log=False,
             match_on_closed=False,
             match_on_deceased=False,
-            do_rm_clinical_run_history=False,
             do_reset_time=False,
             report_all_clinical=False,
             skip_sample_id_reset=False,

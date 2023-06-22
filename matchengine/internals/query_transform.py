@@ -38,7 +38,7 @@ class BaseTransformers(QueryTransformerContainer):
     def age_range_to_date_query(self, **kwargs):
         sample_key = kwargs['sample_key']
         trial_value = kwargs['trial_value']
-        current_date = kwargs.get('compare_date', datetime.date.today())
+        current_date = kwargs['compare_date']
         operator_map = {
             "==": "$eq",
             "<=": "$gte",
@@ -62,7 +62,7 @@ class BaseTransformers(QueryTransformerContainer):
     def age_range_to_date_int_query(self, **kwargs):
         sample_key = kwargs['sample_key']
         trial_value = kwargs['trial_value']
-        current_date = kwargs.get('compare_date', datetime.date.today())
+        current_date = kwargs['compare_date']
         operator_map = {
             "==": "$eq",
             "<=": "$gte",
@@ -83,8 +83,6 @@ class BaseTransformers(QueryTransformerContainer):
         return QueryTransformerResult({sample_key: {operator_map[operator]: int(query_date.strftime('%Y%m%d'))}}, False)
 
     def nomap(self, **kwargs):
-        trial_path = kwargs['trial_path']
-        trial_key = kwargs['trial_key']
         trial_value = kwargs['trial_value']
         sample_key = kwargs['sample_key']
         trial_value, negate = is_negate(trial_value)

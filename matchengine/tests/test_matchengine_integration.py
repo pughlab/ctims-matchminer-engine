@@ -5,11 +5,13 @@ import os
 from shutil import which
 from collections import defaultdict
 from contextlib import redirect_stderr
-from unittest import TestCase
+from unittest import TestCase, SkipTest
 
 from matchengine.internals.database_connectivity.mongo_connection import MongoDBConnection
 from matchengine.internals.engine import MatchEngine
 from matchengine.tests.timetravel_and_override import set_static_date_time, unoverride_datetime
+
+import warnings
 
 try:
     __import__('pandas')
@@ -32,12 +34,12 @@ class IntegrationTestMatchengine(TestCase):
             assert setup_db.name == 'integration'
 
             if not kwargs.get("skip_sample_id_reset", False):
-                setup_db.clinical.update({"SAMPLE_ID": "5d2799d86756630d8dd065b8"},
+                setup_db.clinical.update_many({"SAMPLE_ID": "5d2799d86756630d8dd065b8"},
                                          {"$set": {"ONCOTREE_PRIMARY_DIAGNOSIS_NAME": "Non-Small Cell Lung Cancer",
                                                    "_updated": datetime.datetime(2001, 1, 1, 1, 1, 1, 1)}})
 
             if not kwargs.get("skip_vital_status_reset", False):
-                setup_db.clinical.update({"SAMPLE_ID": "5d2799da6756630d8dd066a6"},
+                setup_db.clinical.update_many({"SAMPLE_ID": "5d2799da6756630d8dd066a6"},
                                          {"$set": {"VITAL_STATUS": "alive",
                                                    "_updated": datetime.datetime(2001, 1, 1, 1, 1, 1, 1)}})
 
@@ -58,7 +60,7 @@ class IntegrationTestMatchengine(TestCase):
                 for trial_path in trials_to_load:
                     with open(trial_path) as trial_file_handle:
                         trial = json.load(trial_file_handle)
-                    setup_db.trial.insert(trial)
+                    setup_db.trial.insert_one(trial)
             if kwargs.get('do_rm_clinical_run_history', False):
                 setup_db.clinical_run_history_trial_match.drop()
 
@@ -145,7 +147,7 @@ class IntegrationTestMatchengine(TestCase):
         self.me.get_matches_for_all_trials()
         for protocol_no in self.me.trials.keys():
             self.me.update_matches_for_protocol_number(protocol_no)
-        assert self.me.db_ro.trial_match.count() == 48
+        assert self.me.db_ro.trial_match.count_documents({}) == 48
 
     def test_wildcard_protein_change(self):
         self._reset(do_reset_trial_matches=True,
@@ -217,21 +219,17 @@ class IntegrationTestMatchengine(TestCase):
         try:
             __import__('pandas')
         except ImportError:
-            print('WARNING: pandas is not installed, skipping this test')
-            return
+            raise SkipTest('WARNING: pandas is not installed, skipping this test')
         try:
             __import__('pygraphviz')
         except ImportError:
-            print('WARNING: pygraphviz is not installed, skipping this test')
-            return
+            raise SkipTest('WARNING: pygraphviz is not installed, skipping this test')
         try:
             __import__('matplotlib')
         except ImportError:
-            print('WARNING: matplotlib is not installed, skipping this test')
-            return
+            raise SkipTest('WARNING: matplotlib is not installed, skipping this test')
         if not which('dot'):
-            print('WARNING: executable "dot" not found, skipping this test')
-            return
+            raise SkipTest('WARNING: executable "dot" not found, skipping this test')
 
         fig_dir = f"/tmp/{os.urandom(10).hex()}"
         os.makedirs(fig_dir, exist_ok=True)
@@ -284,7 +282,9 @@ class IntegrationTestMatchengine(TestCase):
             me.get_matches_for_trial('10-001')
             assert not me._loop.is_closed()
         assert me._loop.is_closed()
-        with open(os.devnull, 'w') as _f, redirect_stderr(_f):
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
             try:
                 me.get_matches_for_trial('10-001')
                 raise AssertionError("MatchEngine should have failed")

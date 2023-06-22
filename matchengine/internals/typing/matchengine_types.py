@@ -18,6 +18,9 @@ from networkx import DiGraph
 
 from matchengine.internals.utilities.object_comparison import nested_object_hash
 
+from dataclasses import dataclass
+from pymongo.results import BulkWriteResult
+
 Trial = NewType("Trial", dict)
 ParentPath = NewType("ParentPath", Tuple[Union[str, int]])
 MatchClause = NewType("MatchClause", List[Dict[str, Any]])
@@ -30,6 +33,17 @@ GenomicID = NewType("GenomicID", ObjectId)
 ClinicalID = NewType("ClinicalID", ObjectId)
 Collection = NewType("Collection", str)
 
+@dataclass
+class UpdateResult:
+    inserted_count: int = 0
+    modified_count: int = 0
+
+    def add_bulk_write_result(self, bwr: BulkWriteResult):
+        self.inserted_count += bwr.inserted_count + bwr.upserted_count
+        self.modified_count += bwr.modified_count
+
+    def fmt(self):
+        return f"{self.inserted_count} records inserted, {self.modified_count} modified"
 
 class PoisonPill(object):
     __slots__ = ()
@@ -392,7 +406,7 @@ class ExtendedMatchReason(object):
         self.width = width
         self.query_node = query_node
         self.depth = query_node.query_depth
-        self.reason_name = query_node.query_level
+        self.reason_name = query_node.query_level # e.g. "genomic"
 
     def extract_raw_query(self):
         return self.query_node.extract_raw_query()
@@ -428,8 +442,8 @@ MatchReason = NewType("MatchReason", Union[ExtendedMatchReason, ClinicalMatchRea
 class TrialMatch(object):
     __slots__ = (
         "trial", "match_clause_data", "match_criterion",
-        "match_clause_data", "multi_collection_query", "match_reason",
-        "run_log"
+        "match_clause_data", "multi_collection_query", "match_reasons",
+        "clinical_id",
     )
 
     def __init__(
@@ -438,15 +452,15 @@ class TrialMatch(object):
             match_clause_data: MatchClauseData,
             match_criterion: MatchCriterion,
             multi_collection_query: MultiCollectionQuery,
-            match_reason: MatchReason,
-            run_log: datetime.datetime,
+            match_reasons: List[MatchReason],
+            clinical_id: ClinicalID
     ):
-        self.run_log = run_log
-        self.match_reason = match_reason
+        self.match_reasons = match_reasons
         self.multi_collection_query = multi_collection_query
         self.match_criterion = match_criterion
         self.match_clause_data = match_clause_data
         self.trial = trial
+        self.clinical_id = clinical_id
 
 
 class Cache(object):
