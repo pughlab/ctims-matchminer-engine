@@ -7,11 +7,14 @@ from argparse import Namespace
 from contextlib import ExitStack
 
 import yaml
+import io
 from bson import json_util
+from pathlib import Path
 
+import json
 from matchengine.internals.database_connectivity.mongo_connection import MongoDBConnection
 
-log = logging.getLogger('matchengine')
+log = logging.getLogger('matchengine.load')
 
 
 def load(args: Namespace):
@@ -29,7 +32,6 @@ def load(args: Namespace):
 
     with ExitStack() as stack:
         db_rw = stack.enter_context(MongoDBConnection(read_only=False, db=args.db_name, async_init=False))
-        db_ro = stack.enter_context(MongoDBConnection(read_only=True, db=args.db_name, async_init=False))
         log.info(f"Database: {args.db_name}")
         if args.trial:
             log.info('Adding trial(s) to mongo...')
@@ -40,172 +42,123 @@ def load(args: Namespace):
             load_clinical(db_rw, args)
 
         if args.genomic:
-            if len(list(db_ro.clinical.find({}))) == 0:
+            if len(list(db_rw.clinical.find({}))) == 0:
                 log.warning("No clinical documents in db. Please load clinical documents before loading genomic.")
 
             log.info('Adding genomic data to mongo...')
-            load_genomic(db_rw, db_ro, args)
+            load_genomic(db_rw, args)
 
         log.info('Done.')
+
 
 
 #################
 # trial loading
 #################
+
 def load_trials(db_rw, args: Namespace):
-    if args.trial_format == 'json':
-        load_trials_json(args, db_rw)
-    elif args.trial_format == 'yml':
-        load_trials_yaml(args, db_rw)
+    trials = items_from_path(Path(args.trial))
+    for trial in trials:
+        if 'protocol_no' not in trial:
+            log.warn("Refusing to add trial without protocol_no")
+            continue
+        trial_del = db_rw['trial'].delete_many({'protocol_no': trial['protocol_no']})
+        log.info(f"Loading trial with protocol_no: {trial.get('protocol_no')}")
+        if trial_del.deleted_count:
+            log.warn("Deleted existing duplicate trial")
+        db_rw.trial.insert_one(trial)
 
-
-def load_trials_yaml(args: Namespace, db_rw):
-    if os.path.isdir(args.trial):
-        load_dir(args, db_rw, "yml", args.trial, 'trial')
+def items_from_path(root_path):
+    source_paths = []
+    if not root_path.exists():
+        raise ValueError(f"path does not exist: {root_path}")
+    if root_path.is_dir():
+        source_paths = [
+            path
+            for glob in [ '**/*.yml', '**/*.yaml', '**/*.json', '**/*.csv' ]
+            for path in root_path.glob(glob)
+        ]
     else:
-        load_file(db_rw, 'yml', args.trial, 'trial')
+        source_paths = [root_path]
+
+    return [
+        item
+        for path in source_paths
+        for item in parse_data(path)
+    ]
 
 
-def load_trials_json(args: Namespace, db_rw):
-    # load a directory of json files
-    if os.path.isdir(args.trial):
-        load_dir(args, db_rw, "json", args.trial, 'trial')
+def parse_data(path):
+    contents = path.read_text()
+    if path.suffix in {'.yml', '.yaml'}:
+        for doc in yaml.safe_load_all(contents):
+            if isinstance(doc, list):
+                for subdoc in doc:
+                    yield subdoc
+            else:
+                yield doc
+    elif path.suffix in {'.json'}:
+        while True:
+            contents = contents.strip()
+            if not contents:
+                break
+            decoder = json.JSONDecoder()
+            doc, idx = decoder.raw_decode(contents)
+            contents = contents[idx:]
+            if isinstance(doc, list):
+                for subdoc in doc:
+                    yield subdoc
+            else:
+                yield doc
+    elif path.suffix in {'.csv'}:
+        reader = csv.DictReader(io.StringIO(contents), strict=True)
+        for row in reader:
+            yield row
     else:
-        # path leads to a single JSON file
-        if is_valid_single_json(args.trial):
-            load_file(db_rw, 'json', args.trial, 'trial')
+        raise ValueError("invalid path")
 
+def load_clinical(db_rw, args):
+    clinicals = items_from_path(Path(args.clinical))
+
+    for c in clinicals:
+        if ('BIRTH_DATE' in c):
+            fixed_date = datetime.strptime(c['BIRTH_DATE'], "%Y-%m-%d")
+            c['BIRTH_DATE'] = fixed_date
+            c['BIRTH_DATE_INT'] = int(fixed_date.strftime('%Y%m%d'))
+
+    for c in clinicals:
+        if 'SAMPLE_ID' not in c:
+            log.warn("Refusing to add clinical document without SAMPLE_ID")
+            continue
+
+        clin_del = db_rw['clinical'].delete_many({'SAMPLE_ID': c['SAMPLE_ID']})
+        gen_del = db_rw['genomic'].delete_many({'SAMPLE_ID': c['SAMPLE_ID']})
+        log.info(f"Loading clinical with SAMPLE_ID: {c.get('SAMPLE_ID')}")
+        if clin_del.deleted_count or gen_del.deleted_count:
+            log.info(f"Removed {clin_del.deleted_count} duplicate clinical documents and {gen_del.deleted_count} genomic documents")
+        db_rw['clinical'].insert_one(c)
+
+def load_genomic(db_rw, args):
+    genomics = items_from_path(Path(args.genomic))
+    clinical_dict = {
+        item['SAMPLE_ID']: item['_id']
+        for item in db_rw['clinical'].find({}, {'_id': 1, 'SAMPLE_ID': 1})
+    }
+    ok_genomics, bad_genomics = [], []
+    for g in genomics:
+        if ('SAMPLE_ID' in g) and (g['SAMPLE_ID'] in clinical_dict):
+            g['CLINICAL_ID'] = clinical_dict[g['SAMPLE_ID']]
+            ok_genomics.append(g)
         else:
-            with open(args.trial) as file:
-                json_raw = file.read()
-                success = None
-                try:
-                    # mongoexport by default exports each object on a new line
-                    json_array = json_raw.split('\n')
-                    for doc in json_array:
-                        data = json.loads(doc)
-                        db_rw.trial.insert_one(data)
-                    success = True
-                except json.decoder.JSONDecodeError as e:
-                    log.debug(f"{e}")
-                if not success:
-                    try:
-                        # mongoexport also allows an export as a json array
-                        json_array = json.loads(json_raw)
-                        for doc in json_array:
-                            db_rw.trial.insert_one(doc)
-                        success = True
-                    except json.decoder.JSONDecodeError as e:
-                        log.debug(f"{e}")
-                        if not success:
-                            log.warning(
-                                'Cannot read json format. JSON documents must be either newline separated, '
-                                'in an array, or loaded as separate documents ')
-                            raise Exception("Unknown JSON Format")
+            bad_genomics.append(g)
+
+    if bad_genomics:
+        log.warn(f"Ignoring {len(bad_genomics)} genomic documents with no corresponding clinical documents")
+    
+    log.info(f"Loading {len(ok_genomics)} genomic documents")
+    for c in ok_genomics:
+        db_rw['genomic'].insert_one(c)
 
 
-########################
-# patient data loading
-########################
-def load_clinical(db_rw, args: Namespace):
-    if args.patient_format == 'json':
-
-        # load directory of clinical json files
-        if os.path.isdir(args.clinical):
-            load_dir(args, db_rw, 'json', args.clinical, 'clinical')
-        else:
-            load_file(db_rw, 'json', args.clinical, 'clinical')
-
-    elif args.patient_format == 'csv':
-        load_file(db_rw, 'csv', args.clinical, 'clinical')
 
 
-def load_genomic(db_rw, db_ro, args: Namespace, ):
-    if args.patient_format == 'json':
-        # load directory of clinical json files
-        if os.path.isdir(args.genomic):
-            load_dir(args, db_rw, 'json', args.genomic, 'genomic')
-        else:
-            load_file(db_rw, 'json', args.genomic, 'genomic')
-    elif args.patient_format == 'csv':
-        load_file(db_rw, 'csv', args.genomic, 'genomic')
-
-    map_clinical_to_genomic(db_rw, db_ro)
-
-
-def map_clinical_to_genomic(db_rw, db_ro):
-    """Ensure that all genomic docs are linked to their corresponding clinical docs by _id"""
-    clinical_docs = list(db_ro.clinical.find({}, {"_id": 1, "SAMPLE_ID": 1}))
-    clinical_dict = dict(zip([i['SAMPLE_ID'] for i in clinical_docs], [i['_id'] for i in clinical_docs]))
-
-    genomic_docs = list(db_ro.genomic.find({}))
-    for genomic_doc in genomic_docs:
-        if genomic_doc['SAMPLE_ID'] in clinical_dict:
-            genomic_doc["CLINICAL_ID"] = clinical_dict[genomic_doc['SAMPLE_ID']]
-        else:
-            genomic_doc["CLINICAL_ID"] = None
-            log.warning(f"WARNING: No clinical document found for ObjectId({genomic_doc['_id']}")
-        db_rw.genomic.update_one({'_id': genomic_doc['_id']}, {'$set': {'CLINICAL_ID': genomic_doc["CLINICAL_ID"]}})
-
-
-##################
-# util functions
-##################
-def load_dir(args: Namespace, db_rw, filetype: str, path: str, collection: str):
-    for filename in os.listdir(path):
-        if filename.endswith(f".{filetype}") or (filetype == "yml" and filename.endswith(".yaml")):
-            val = vars(args)[collection]
-            full_path = val + filename if val[-1] == '/' else val + '/' + filename
-            load_file(db_rw, filetype, full_path, collection)
-
-
-def load_file(db_rw, filetype: str, path: str, collection: str):
-    with open(path) as file_handle:
-        if filetype == 'csv':
-            file_handle = csv.DictReader(file_handle, delimiter=',')
-            for row in file_handle:
-                for key in file_handle.fieldnames:
-                    if key == 'BIRTH_DATE':
-                        row[key] = convert_birthdate(row[key])
-                        row['BIRTH_DATE_INT'] = int(row[key].strftime('%Y%m%d'))
-                db_rw[collection].insert_one(row)
-        else:
-            raw_file_data = file_handle.read()
-            if filetype == 'yml':
-                data = yaml.safe_load_all(raw_file_data)
-                db_rw[collection].insert_many(data)
-            elif filetype == 'json':
-                if is_valid_single_json(path):
-                    data = json_util.loads(raw_file_data)
-                    for key in list(data.keys()):
-                        if key == 'BIRTH_DATE':
-                            data[key] = convert_birthdate(data[key])
-                            data['BIRTH_DATE_INT'] = int(data[key].strftime('%Y%m%d'))
-                    db_rw[collection].insert_one(data)
-
-
-def convert_birthdate(birth_date):
-    """Convert a string birthday to to datetime object"""
-    try:
-        birth_date_dt = datetime.strptime(birth_date, "%Y-%m-%d")
-    except Exception as e:
-        log.warn("Unable to import clinical data due to malformed "
-                 "patient birth date. \n\nBirthdates must be strings with "
-                 "the following format \n %Y-%m-%d \n 2019-10-27 ")
-        raise ImportError
-    return birth_date_dt
-
-def is_valid_single_json(path: str):
-    """Check if a JSON file is a single object or an array of JSON objects"""
-    try:
-        with open(path) as f:
-            json_file = json.load(f)
-            if json_file.__class__ is list:
-                return False
-            return True
-    except (FileNotFoundError, json.decoder.JSONDecodeError) as e:
-        if e.__class__ is FileNotFoundError:
-            log.error(f"{e}")
-            raise e
-        elif e.__class__ is json.decoder.JSONDecodeError:
-            return False

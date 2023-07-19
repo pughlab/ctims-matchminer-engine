@@ -80,8 +80,6 @@ async def execute_clinical_queries(matchengine: MatchEngine,
                         matchengine.cache.in_process[query_hash][cid] = group_future
 
                     new_query = {'$and': [{join_field: {'$in': list(need_new)}}, query_part.query]}
-                    if matchengine.debug:
-                        log.info(f"{query_part.query}")
                     projection = {id_field: 1, join_field: 1}
                     docs = await matchengine.async_db_ro[collection].find(new_query, projection).to_list(None)
 

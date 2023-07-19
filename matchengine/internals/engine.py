@@ -82,7 +82,6 @@ class MatchEngine(object):
     sample_ids: Union[List[str], None]
     match_on_closed: bool
     match_on_deceased: bool
-    debug: bool
     num_workers: int
     clinical_ids: Set[ClinicalID]
     _task_q: asyncio.queues.Queue
@@ -121,7 +120,6 @@ class MatchEngine(object):
             protocol_nos: Set[str] = None,
             match_on_deceased: bool = False,
             match_on_closed: bool = False,
-            debug: bool = False,
             num_workers: int = cpu_count() * 5,
             visualize_match_paths: bool = False,
             fig_dir: str = None,
@@ -166,7 +164,6 @@ class MatchEngine(object):
         self._protocol_nos_param = list(protocol_nos) if protocol_nos is not None else protocol_nos
         self._sample_ids_param = list(sample_ids) if sample_ids is not None else sample_ids
         self.chunk_size = chunk_size
-        self.debug = debug
 
         if config.__class__ is str:
             with open(config) as config_file_handle:
@@ -556,10 +553,10 @@ class MatchEngine(object):
         return {clinical_id
                 for clinical_id, clinical_data
                 in self._clinical_data.items()
-                if clinical_data['VITAL_STATUS'] == 'deceased'}
+                if clinical_data.get('VITAL_STATUS') == 'deceased'}
 
     def get_clinical_birth_dates(self) -> Dict[ClinicalID, int]:
-        return {clinical_id: clinical_data['BIRTH_DATE_INT']
+        return {clinical_id: clinical_data.get('BIRTH_DATE_INT')
                 for clinical_id, clinical_data
                 in self._clinical_data.items()
                 }
@@ -794,10 +791,13 @@ class MatchEngine(object):
             if clinical_id in self.clinical_deceased and not self.match_on_deceased:
                 continue
             birth_date = self.clinical_birth_dates[clinical_id]
-            old_criterion_matches = op_func(birth_date, old_criterion_val)
-            new_criterion_matches = op_func(birth_date, new_criterion_val)
-            if old_criterion_matches != new_criterion_matches:
+            if birth_date is None:
                 ids_aged.add(clinical_id)
+            else:
+                old_criterion_matches = op_func(birth_date, old_criterion_val)
+                new_criterion_matches = op_func(birth_date, new_criterion_val)
+                if old_criterion_matches != new_criterion_matches:
+                    ids_aged.add(clinical_id)
 
         return ids_aged
 

@@ -4,3 +4,4 @@ tests/__pycache__/*
 *.pyc
 *.egg-info
 trial_matches_*.csv
+secrets_local*.json
