@@ -26,14 +26,13 @@ if TYPE_CHECKING:
 class TrialMatchDocumentCreator(object):
     cache: Cache
     config: Dict
+    me: MatchEngine
 
-    def results_transformer(self: MatchEngine, results: Dict[ClinicalID, List[MatchReason]]):
-        pass
+    def __init__(self, me: MatchEngine):
+        self.matchengine = me
 
-    def create_trial_matches(self: MatchEngine, trial_match: TrialMatch,
-                             new_trial_match: Dict) -> Dict:
-        pass
-
+    def create_trial_matches(self, trial_match: TrialMatch) -> list:
+        return []
 
 class QueryTransformerContainer(object):
     _: MatchCriteriaTransform
@@ -60,12 +59,6 @@ class QueryNodeClinicalIDsSubsetter(object):
     ) -> Set[ClinicalID]:
         pass
 
-    def clinical_query_node_clinical_ids_subsetter(
-            self: MatchEngine,
-            query_node: QueryNode,
-            clinical_ids: Set[ClinicalID]
-    ) -> Set[ClinicalID]:
-        pass
 
 
 class QueryNodeContainerTransformer(object):

@@ -19,12 +19,10 @@ from matchengine.internals.typing.matchengine_types import (
     RunLogUpdateTask, ClinicalID
 )
 from matchengine.internals.utilities.object_comparison import nested_object_hash
-from matchengine.internals.utilities.utilities import get_sort_order
 
 if TYPE_CHECKING:
     from matchengine.internals.engine import MatchEngine
 
-logging.basicConfig(level=logging.INFO)
 log = logging.getLogger('matchengine')
 
 
@@ -39,15 +37,24 @@ async def run_check_indices_task(matchengine: MatchEngine, task, worker_id):
         for collection, desired_indices in matchengine.config['indices'].items():
             if collection == "trial_match":
                 collection = matchengine.trial_match_collection
-            indices = list()
-            indices.extend(matchengine.db_ro[collection].list_indexes())
-            existing_indices = set()
-            for index in indices:
-                index_key = list(index['key'].to_dict().keys())[0]
-                existing_indices.add(index_key)
-            indices_to_create = set(desired_indices) - existing_indices
-            for index in indices_to_create:
-                matchengine.task_q.put_nowait(IndexUpdateTask(collection, index))
+
+            index_info = matchengine.db_ro[collection].index_information()
+            existing = set()
+            for name, info in index_info.items():
+                key = tuple( field for field, direction in info['key'] )
+                existing.add(key)
+
+            desired = set()
+            for index in desired_indices:
+                if not isinstance(index, list):
+                    index = [index]
+                desired.add(tuple(index))
+
+            for fields in (desired - existing):
+                matchengine.task_q.put_nowait(IndexUpdateTask(
+                    collection,
+                    [ (f, 1) for f in fields ]
+                ))
         matchengine.task_q.task_done()
     except Exception as e:
         log.error(f"ERROR: Worker: {worker_id}, error: {e}")
@@ -74,6 +81,7 @@ async def run_index_update_task(matchengine: MatchEngine, task: IndexUpdateTask,
         log.info(
             f"Worker: {worker_id}, index {task.index}, collection {task.collection} got new IndexUpdateTask")
     try:
+        log.info(f"Creating index: {task.index!r}")
         matchengine.db_rw[task.collection].create_index(task.index)
         matchengine.task_q.task_done()
     except Exception as e:
@@ -96,12 +104,17 @@ async def run_index_update_task(matchengine: MatchEngine, task: IndexUpdateTask,
 
 async def run_query_task(matchengine: MatchEngine, task, worker_id):
     trial_identifier = matchengine.match_criteria_transform.trial_identifier
+    protocol_no = task.trial[trial_identifier]
     if matchengine.debug:
-        log.info((f"Worker: {worker_id}, {trial_identifier}: {task.trial[trial_identifier]} got new QueryTask, "
-                  f"{matchengine._task_q.qsize()} tasks left in queue"))
+        log.info((f"Worker: {worker_id}, {trial_identifier}: {protocol_no} got new QueryTask, "
+                    f"{matchengine._task_q.qsize()} tasks left in queue"))
+    clinical_ids = matchengine.get_clinical_ids_for_protocol(protocol_no)
+    if not clinical_ids:
+        log.info("No clinical IDs for query task, skipping")
+        matchengine.task_q.task_done()
+        return
     try:
-        results: Dict[ClinicalID, List[MatchReason]] = await matchengine.run_query(task.query,
-                                                                                   task.clinical_ids)
+        results, docs = await matchengine.run_query(task.query, clinical_ids)
     except Exception as e:
         results = dict()
         log.error(f"ERROR: Worker: {worker_id}, error: {e}")
@@ -119,40 +132,34 @@ async def run_query_task(matchengine: MatchEngine, task, worker_id):
             matchengine.loop.stop()
             log.error(f"ERROR: Worker: {worker_id}, error: {e}")
             log.error(f"TRACEBACK: {traceback.print_tb(e.__traceback__)}")
+            raise e
 
     try:
-        by_sample_id = defaultdict(list)
-        matchengine.results_transformer(results)
-        if not results:
-            matchengine.matches.setdefault(task.match_clause_data.protocol_no, dict())
-        for _, sample_results in results.items():
-            for result in sample_results:
-                matchengine.queue_task_count += 1
-                if matchengine.queue_task_count % 1000 == 0 and matchengine.debug:
-                    log.info(f"Trial match count: {matchengine.queue_task_count}")
-                match_context_data = TrialMatch(task.trial,
-                                                task.match_clause_data,
-                                                task.match_path,
-                                                task.query,
-                                                result,
-                                                matchengine.starttime)
+        matchengine.cache.docs = docs
+        trial_match_dict = matchengine.matches[task.trial[trial_identifier]]
+        for clinical_id, sample_reasons in results.items():
+            trial_match = TrialMatch(task.trial,
+                                            task.match_clause_data,
+                                            task.match_path,
+                                            task.query,
+                                            sample_reasons,
+                                            clinical_id)
 
-                # allow user to extend trial_match objects in plugin functions
-                # generate required fields on trial match doc before
+            # generate trial match documents using plugin
+            match_documents = matchengine.create_trial_matches(trial_match)
+
+            sample_id = matchengine.clinical_mapping[clinical_id]
+            sample_match_list = trial_match_dict.setdefault(sample_id, [])
+
+            for match_document in match_documents:
+                match_document[matchengine.match_criteria_transform.match_trial_link_id] = protocol_no
+                match_document['sample_id'] = sample_id
                 # generate sort_order and hash fields after all fields are added
-                new_match_proto = matchengine.pre_process_trial_matches(match_context_data)
-                match_document = matchengine.create_trial_matches(match_context_data, new_match_proto)
-                sort_order = get_sort_order(matchengine, match_document)
-                match_document['sort_order'] = sort_order
-                to_hash = {key: match_document[key] for key in match_document if key not in {'hash', 'is_disabled'}}
-                match_document['hash'] = nested_object_hash(to_hash)
-                match_document['_me_id'] = matchengine.run_id.hex
+                match_hash = nested_object_hash(match_document)
+                match_document['hash'] = match_hash
+                match_document['is_disabled'] = False
 
-                matchengine.matches.setdefault(task.trial[trial_identifier],
-                                               dict()).setdefault(match_document['sample_id'],
-                                                                  list()).append(match_document)
-                by_sample_id[match_document['sample_id']].append(match_document)
-
+                sample_match_list.append(match_document)
     except Exception as e:
         matchengine.loop.stop()
         log.error(f"ERROR: Worker: {worker_id}, error: {e}")
@@ -178,7 +185,13 @@ async def run_update_task(matchengine: MatchEngine, task: UpdateTask, worker_id)
             for chunked_ops
             in chunk_list(task.ops, matchengine.chunk_size)
         ]
-        await asyncio.gather(*tasks)
+        results = await asyncio.gather(*tasks)
+        local_update_tracker = matchengine.update_trackers_by_protocol[task.protocol_no]
+        global_update_tracker = matchengine.global_update_tracker
+        for result in results:
+            local_update_tracker.add_bulk_write_result(result)
+            if global_update_tracker:
+                global_update_tracker.add_bulk_write_result(result)
         matchengine.task_q.task_done()
     except Exception as e:
         log.error(f"ERROR: Worker: {worker_id}, error: {e}")
@@ -197,34 +210,12 @@ async def run_update_task(matchengine: MatchEngine, task: UpdateTask, worker_id)
 
 
 async def run_run_log_update_task(matchengine: MatchEngine, task: RunLogUpdateTask, worker_id):
-    clinical_run_history_collection = f"clinical_run_history_{matchengine.trial_match_collection}"
-    run_log_collection = f"run_log_{matchengine.trial_match_collection}"
-    if task.protocol_no not in matchengine.trials_to_match_on:
-        matchengine.task_q.task_done()
-        return
     try:
         if matchengine.debug:
             log.info(f"Worker {worker_id} got new RunLogUpdateTask {task.protocol_no}")
-            logging.error(matchengine.run_log_entries[task.protocol_no])
 
-        dont_need_insert, _ = await asyncio.gather(
-            matchengine.async_db_ro.get_collection(clinical_run_history_collection).distinct("clinical_id"),
-            matchengine.async_db_rw[run_log_collection].insert_one(matchengine.run_log_entries[task.protocol_no])
-        )
-        new_clinical_run_log_docs = set(matchengine.clinical_run_log_entries[task.protocol_no]) - set(dont_need_insert)
-        clinical_update_ops = [
-            InsertOne({"clinical_id": clinical_id, "run_history": list()})
-            for clinical_id
-            in new_clinical_run_log_docs
-        ]
-        if clinical_update_ops:
-            await matchengine.async_db_rw.get_collection(
-                clinical_run_history_collection
-            ).bulk_write(clinical_update_ops, ordered=False)
-        await matchengine.async_db_rw.get_collection(clinical_run_history_collection).update_many(
-            {'clinical_id': {"$in": list(matchengine.clinical_run_log_entries[task.protocol_no])}},
-            {'$addToSet': {"run_history": matchengine.run_id.hex}}
-        )
+        await matchengine.record_run_log(task.protocol_no)
+
         matchengine.task_q.task_done()
     except Exception as e:
         log.error(f"ERROR: Worker: {worker_id}, error: {e}")

@@ -11,7 +11,6 @@ from bson import json_util
 
 from matchengine.internals.database_connectivity.mongo_connection import MongoDBConnection
 
-logging.basicConfig(level=logging.INFO)
 log = logging.getLogger('matchengine')
 
 
@@ -56,15 +55,15 @@ def load(args: Namespace):
 def load_trials(db_rw, args: Namespace):
     if args.trial_format == 'json':
         load_trials_json(args, db_rw)
-    elif args.trial_format == 'yaml':
+    elif args.trial_format == 'yml':
         load_trials_yaml(args, db_rw)
 
 
 def load_trials_yaml(args: Namespace, db_rw):
     if os.path.isdir(args.trial):
-        load_dir(args, db_rw, "yaml", args.trial, 'trial')
+        load_dir(args, db_rw, "yml", args.trial, 'trial')
     else:
-        load_file(db_rw, 'yaml', args.trial, 'trial')
+        load_file(db_rw, 'yml', args.trial, 'trial')
 
 
 def load_trials_json(args: Namespace, db_rw):
@@ -154,7 +153,7 @@ def map_clinical_to_genomic(db_rw, db_ro):
 ##################
 def load_dir(args: Namespace, db_rw, filetype: str, path: str, collection: str):
     for filename in os.listdir(path):
-        if filename.endswith(f".{filetype}"):
+        if filename.endswith(f".{filetype}") or (filetype == "yml" and filename.endswith(".yaml")):
             val = vars(args)[collection]
             full_path = val + filename if val[-1] == '/' else val + '/' + filename
             load_file(db_rw, filetype, full_path, collection)
@@ -172,7 +171,7 @@ def load_file(db_rw, filetype: str, path: str, collection: str):
                 db_rw[collection].insert_one(row)
         else:
             raw_file_data = file_handle.read()
-            if filetype == 'yaml':
+            if filetype == 'yml':
                 data = yaml.safe_load_all(raw_file_data)
                 db_rw[collection].insert_many(data)
             elif filetype == 'json':

@@ -19,7 +19,7 @@ class TestMatchEngine(TestCase):
         """init matchengine without running __init__ since tests will need to instantiate various values individually"""
         self.me = MatchEngine.__new__(MatchEngine)
 
-        assert self.me.create_trial_matches({}, {}).__class__ is dict
+        assert self.me.create_trial_matches({}).__class__ is list
         self.me.plugin_dir = 'matchengine/tests/plugins'
         self.me.match_document_creator_class = 'TestTrialMatchDocumentCreator'
         self.me.visualize_match_paths = False
@@ -37,7 +37,7 @@ class TestMatchEngine(TestCase):
         assert hasattr(self.me, 'create_trial_matches')
         assert id(self.me.create_trial_matches) != old_create_trial_matches
         blank_trial_match = self.me.create_trial_matches({})
-        assert blank_trial_match.__class__ is dict and not blank_trial_match
+        assert blank_trial_match.__class__ is list and not blank_trial_match
 
     def test_query_transform(self):
         find_plugins(self.me)
@@ -95,7 +95,7 @@ class TestMatchEngine(TestCase):
             match_clause = data['treatment_list']['step'][0]['arm'][0]['match'][0]
             self.me.trials['11-111'] = data
 
-        extracted = next(extract_match_clauses_from_trial(self.me, '11-111'))
+        extracted = next(extract_match_clauses_from_trial(self.me, self.me.trials['11-111']))
         assert extracted.match_clause[0]['and'] == match_clause['and']
         assert extracted.parent_path == ('treatment_list', 'step', 0, 'arm', 0, 'match')
         assert extracted.match_clause_level == 'arm'
@@ -117,8 +117,6 @@ class TestMatchEngine(TestCase):
             match_tree = create_match_tree(self.me, MatchClauseData(match_clause=me_trial,
                                                                     internal_id='123',
                                                                     code='456',
-                                                                    coordinating_center='The Death Star',
-                                                                    status='Open to Accrual',
                                                                     parent_path=ParentPath(()),
                                                                     match_clause_level=MatchClauseLevel('arm'),
                                                                     match_clause_additional_attributes={},
@@ -152,8 +150,6 @@ class TestMatchEngine(TestCase):
             match_tree = create_match_tree(self.me, MatchClauseData(match_clause=me_trial,
                                                                     internal_id='123',
                                                                     code='456',
-                                                                    coordinating_center='The Death Star',
-                                                                    status='Open to Accrual',
                                                                     parent_path=ParentPath(()),
                                                                     match_clause_level=MatchClauseLevel('arm'),
                                                                     match_clause_additional_attributes={},
@@ -175,8 +171,6 @@ class TestMatchEngine(TestCase):
         match_clause_data = MatchClauseData(match_clause=MatchClause([{}]),
                                             internal_id='123',
                                             code='456',
-                                            coordinating_center='The Death Star',
-                                            status='Open to Accrual',
                                             parent_path=ParentPath(()),
                                             match_clause_level=MatchClauseLevel('arm'),
                                             match_clause_additional_attributes={},

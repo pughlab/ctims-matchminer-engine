@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 log = logging.getLogger("matchengine")
 
 
-def extract_match_clauses_from_trial(matchengine: MatchEngine, protocol_no: str) -> Generator[MatchClauseData]:
+def extract_match_clauses_from_trial(matchengine: MatchEngine, trial) -> Generator[MatchClauseData]:
     """
     Pull out all of the matches from a trial curation.
     Return the parent path and the values of that match clause.
@@ -42,11 +42,6 @@ def extract_match_clauses_from_trial(matchengine: MatchEngine, protocol_no: str)
     otherwise specified.
     """
 
-    trial = matchengine.trials[protocol_no]
-    trial_status = trial.get('_summary', dict()).get('status', [dict()])
-    site_status = trial_status[0].get('value', 'open to accrual').lower()
-    status_for_match_clause = 'open' if site_status.lower() == 'open to accrual' else 'closed'
-    coordinating_center = trial.get('_summary', dict()).get('coordinating_center', 'unknown')
     process_q = deque()
     for key, val in trial.items():
 
@@ -54,8 +49,6 @@ def extract_match_clauses_from_trial(matchengine: MatchEngine, protocol_no: str)
         if key == 'match':
             parent_path = ParentPath(tuple())
             match_clause_data = MatchClauseData(val,
-                                                None,
-                                                None,
                                                 None,
                                                 None,
                                                 None,
@@ -92,29 +85,21 @@ def extract_match_clauses_from_trial(matchengine: MatchEngine, protocol_no: str)
                     if match_level == 'step':
                         if all([arm.get('arm_suspended', 'n').lower().strip() == 'y'
                                 for arm in parent_value.get('arm', list())]):
-                            if not matchengine.match_on_closed:
-                                log.info(f"{protocol_no} {match_level} {internal_id} has no open arms, skipping...")
-                                continue
+                            log.debug(f"{match_level} {internal_id} has no open arms")
                             is_suspended = True
                     elif match_level == 'arm':
                         if parent_value.get('arm_suspended', 'n').lower().strip() == 'y':
-                            if not matchengine.match_on_closed:
-                                log.info(f"{protocol_no} {match_level} {internal_id} is suspended, skipping...")
-                                continue
+                            log.debug(f"{match_level} {internal_id} is suspended")
                             is_suspended = True
                     elif match_level == 'dose_level':
                         if parent_value.get('level_suspended', 'n').lower().strip() == 'y':
-                            if not matchengine.match_on_closed:
-                                log.info(f"{protocol_no} {match_level} {internal_id} is suspended, skipping...")
-                                continue
+                            log.debug(f"{match_level} {internal_id} is suspended")
                             is_suspended = True
 
                     yield MatchClauseData(inner_value,
                                           internal_id,
                                           code,
-                                          coordinating_center,
                                           is_suspended,
-                                          status_for_match_clause,
                                           parent_path,
                                           level,
                                           parent_value,
@@ -298,7 +283,8 @@ def translate_match_path(matchengine,
                                                 trial_value=trial_value,
                                                 parent_path=match_clause_data.parent_path,
                                                 trial_path=node_name,
-                                                trial_key=trial_key)
+                                                trial_key=trial_key,
+                                                compare_date=matchengine.age_comparison_date)
                     sample_function_args.update(trial_key_settings)
                     result: QueryTransformerResult = sample_function(**sample_function_args)
                     to_create = len(result.results) - 1
