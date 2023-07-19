@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setup(
     name="MatchEngine V2",
-    version="2.2.0",
+    version="2.2.1",
     packages=[
         "matchengine",
         "matchengine.internals",
@@ -19,9 +19,9 @@ setup(
     author_email='esiegel@ds.dfci.harvard.edu',
     description='Open source engine for matching cancer patients to precision medicine clinical trials (V2).',
     long_description=long_description,
-    entrypoints={
-        "console-scripts": [
-            "matchengine =  matchengine.main"
+    entry_points={
+        "console_scripts": [
+            "matchengine = matchengine.cli:run_cli"
         ]
     },
     install_requires=[

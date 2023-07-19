@@ -30,9 +30,6 @@ async def run_check_indices_task(matchengine: MatchEngine, task, worker_id):
     """
     Ensure indexes exist on collections so queries are performant
     """
-    if matchengine.debug:
-        log.info(
-            f"Worker: {worker_id}, got new CheckIndicesTask")
     try:
         for collection, desired_indices in matchengine.config['indices'].items():
             if collection == "trial_match":
@@ -77,9 +74,6 @@ async def run_check_indices_task(matchengine: MatchEngine, task, worker_id):
 
 
 async def run_index_update_task(matchengine: MatchEngine, task: IndexUpdateTask, worker_id):
-    if matchengine.debug:
-        log.info(
-            f"Worker: {worker_id}, index {task.index}, collection {task.collection} got new IndexUpdateTask")
     try:
         log.info(f"Creating index: {task.index!r}")
         matchengine.db_rw[task.collection].create_index(task.index)
@@ -105,9 +99,6 @@ async def run_index_update_task(matchengine: MatchEngine, task: IndexUpdateTask,
 async def run_query_task(matchengine: MatchEngine, task, worker_id):
     trial_identifier = matchengine.match_criteria_transform.trial_identifier
     protocol_no = task.trial[trial_identifier]
-    if matchengine.debug:
-        log.info((f"Worker: {worker_id}, {trial_identifier}: {protocol_no} got new QueryTask, "
-                    f"{matchengine._task_q.qsize()} tasks left in queue"))
     clinical_ids = matchengine.get_clinical_ids_for_protocol(protocol_no)
     if not clinical_ids:
         log.info("No clinical IDs for query task, skipping")
@@ -170,28 +161,18 @@ async def run_query_task(matchengine: MatchEngine, task, worker_id):
 
 
 async def run_poison_pill(matchengine: MatchEngine, task, worker_id):
-    if matchengine.debug:
-        log.info(f"Worker: {worker_id} got PoisonPill")
     matchengine.task_q.task_done()
 
 
 async def run_update_task(matchengine: MatchEngine, task: UpdateTask, worker_id):
     try:
-        if matchengine.debug:
-            log.info(f"Worker {worker_id} got new UpdateTask {task.protocol_no}")
-        tasks = [
-            matchengine.async_db_rw[matchengine.trial_match_collection].bulk_write(chunked_ops,
-                                                                                   ordered=False)
-            for chunked_ops
-            in chunk_list(task.ops, matchengine.chunk_size)
-        ]
-        results = await asyncio.gather(*tasks)
+        result = await matchengine.async_db_rw[matchengine.trial_match_collection] \
+            .bulk_write(task.ops, ordered=False)
         local_update_tracker = matchengine.update_trackers_by_protocol[task.protocol_no]
         global_update_tracker = matchengine.global_update_tracker
-        for result in results:
-            local_update_tracker.add_bulk_write_result(result)
-            if global_update_tracker:
-                global_update_tracker.add_bulk_write_result(result)
+        local_update_tracker.add_bulk_write_result(result)
+        if global_update_tracker:
+            global_update_tracker.add_bulk_write_result(result)
         matchengine.task_q.task_done()
     except Exception as e:
         log.error(f"ERROR: Worker: {worker_id}, error: {e}")
@@ -211,8 +192,6 @@ async def run_update_task(matchengine: MatchEngine, task: UpdateTask, worker_id)
 
 async def run_run_log_update_task(matchengine: MatchEngine, task: RunLogUpdateTask, worker_id):
     try:
-        if matchengine.debug:
-            log.info(f"Worker {worker_id} got new RunLogUpdateTask {task.protocol_no}")
 
         await matchengine.record_run_log(task.protocol_no)
 
