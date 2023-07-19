@@ -18,6 +18,9 @@ from networkx import DiGraph
 
 from matchengine.internals.utilities.object_comparison import nested_object_hash
 
+from dataclasses import dataclass
+from pymongo.results import BulkWriteResult
+
 Trial = NewType("Trial", dict)
 ParentPath = NewType("ParentPath", Tuple[Union[str, int]])
 MatchClause = NewType("MatchClause", List[Dict[str, Any]])
@@ -30,6 +33,17 @@ GenomicID = NewType("GenomicID", ObjectId)
 ClinicalID = NewType("ClinicalID", ObjectId)
 Collection = NewType("Collection", str)
 
+@dataclass
+class UpdateResult:
+    inserted_count: int = 0
+    modified_count: int = 0
+
+    def add_bulk_write_result(self, bwr: BulkWriteResult):
+        self.inserted_count += bwr.inserted_count + bwr.upserted_count
+        self.modified_count += bwr.modified_count
+
+    def fmt(self):
+        return f"{self.inserted_count} records inserted, {self.modified_count} modified"
 
 class PoisonPill(object):
     __slots__ = ()
@@ -56,7 +70,7 @@ class IndexUpdateTask(object):
 class QueryTask(object):
     __slots__ = (
         "trial", "match_clause_data", "match_path",
-        "query", "clinical_ids"
+        "query"
     )
 
     def __init__(
@@ -65,9 +79,7 @@ class QueryTask(object):
             match_clause_data: MatchClauseData,
             match_path: MatchCriterion,
             query: MultiCollectionQuery,
-            clinical_ids: Set[ClinicalID]
     ):
-        self.clinical_ids = clinical_ids
         self.query = query
         self.match_path = match_path
         self.match_clause_data = match_clause_data
@@ -237,12 +249,14 @@ class QueryNode(object):
         self.query_parts.append(query_part)
 
     def _extract_raw_query(self):
-        return {
-            key: value
-            for query_part in self.query_parts
-            for key, value in query_part.query.items()
-            if query_part.render
-        }
+        result = {}
+        for query_part in self.query_parts:
+            if query_part.render:
+                for k, v in query_part.query.items():
+                    if k in result:
+                        raise ValueError("Generated query with duplicate keys")
+                    result[k] = v
+        return result
 
     def extract_raw_query(self):
         if self.is_finalized:
@@ -341,7 +355,7 @@ class MultiCollectionQuery(object):
 class MatchClauseData(object):
     __slots__ = (
         "match_clause", "internal_id", "code",
-        "coordinating_center", "is_suspended", "status",
+        "is_suspended",
         "parent_path", "match_clause_level", "match_clause_additional_attributes",
         "protocol_no"
     )
@@ -350,17 +364,13 @@ class MatchClauseData(object):
                  match_clause: MatchClause,
                  internal_id: str,
                  code: str,
-                 coordinating_center: str,
                  is_suspended: bool,
-                 status: str,
                  parent_path: ParentPath,
                  match_clause_level: MatchClauseLevel,
                  match_clause_additional_attributes: dict,
                  protocol_no: str):
         self.code = code
-        self.coordinating_center = coordinating_center
         self.is_suspended = is_suspended
-        self.status = status
         self.parent_path = parent_path
         self.match_clause_level = match_clause_level
         self.internal_id = internal_id
@@ -373,7 +383,7 @@ class ExtendedMatchReason(object):
     __slots__ = (
         "query_node", "width", "clinical_id",
         "reference_id", "clinical_width", "depth",
-        "show_in_ui", "reason_name"
+        "reason_name"
     )
 
     def __init__(
@@ -383,16 +393,14 @@ class ExtendedMatchReason(object):
             clinical_width: int,
             clinical_id: ClinicalID,
             reference_id: Union[GenomicID, None],
-            show_in_ui: bool,
     ):
-        self.show_in_ui = show_in_ui
         self.clinical_width = clinical_width
         self.reference_id = reference_id
         self.clinical_id = clinical_id
         self.width = width
         self.query_node = query_node
         self.depth = query_node.query_depth
-        self.reason_name = query_node.query_level
+        self.reason_name = query_node.query_level # e.g. "genomic"
 
     def extract_raw_query(self):
         return self.query_node.extract_raw_query()
@@ -400,8 +408,7 @@ class ExtendedMatchReason(object):
 
 class ClinicalMatchReason(object):
     __slots__ = (
-        "query_part", "clinical_id", "depth",
-        "show_in_ui"
+        "query_part", "clinical_id", "depth"
     )
     reason_name = "clinical"
     width = 1
@@ -410,10 +417,8 @@ class ClinicalMatchReason(object):
             self,
             query_part: QueryPart,
             clinical_id: ClinicalID,
-            depth: int,
-            show_in_ui: bool
+            depth: int
     ):
-        self.show_in_ui = show_in_ui
         self.clinical_id = clinical_id
         self.query_part = query_part
         self.depth = depth
@@ -428,8 +433,8 @@ MatchReason = NewType("MatchReason", Union[ExtendedMatchReason, ClinicalMatchRea
 class TrialMatch(object):
     __slots__ = (
         "trial", "match_clause_data", "match_criterion",
-        "match_clause_data", "multi_collection_query", "match_reason",
-        "run_log"
+        "match_clause_data", "multi_collection_query", "match_reasons",
+        "clinical_id",
     )
 
     def __init__(
@@ -438,15 +443,15 @@ class TrialMatch(object):
             match_clause_data: MatchClauseData,
             match_criterion: MatchCriterion,
             multi_collection_query: MultiCollectionQuery,
-            match_reason: MatchReason,
-            run_log: datetime.datetime,
+            match_reasons: List[MatchReason],
+            clinical_id: ClinicalID
     ):
-        self.run_log = run_log
-        self.match_reason = match_reason
+        self.match_reasons = match_reasons
         self.multi_collection_query = multi_collection_query
         self.match_criterion = match_criterion
         self.match_clause_data = match_clause_data
         self.trial = trial
+        self.clinical_id = clinical_id
 
 
 class Cache(object):

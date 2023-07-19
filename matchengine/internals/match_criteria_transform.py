@@ -5,6 +5,8 @@ import os
 
 from typing import TYPE_CHECKING
 
+log = logging.getLogger('matchengine')
+
 if TYPE_CHECKING:
     from typing import (
         Callable,
@@ -87,11 +89,6 @@ class MatchCriteriaTransform(object):
         self.trial_identifier = config.get('trial_identifier', 'protocol_no')
         self.match_trial_link_id = config.get('match_trial_link_id', self.trial_identifier)
         self.transform = TransformFunctions()
-        self.valid_clinical_reasons = {
-            frozenset(reasons)
-            for reasons in
-            self.config.get("valid_clinical_reasons", list())
-        }
         # By default, only trials that are "Open to Accrual" are run.
         # This value by default is stored inside a "_summary" object.
         # If a different field indicates trial accrual status, that is set here.
@@ -100,7 +97,7 @@ class MatchCriteriaTransform(object):
             self.custom_status_key_name = self.use_custom_trial_status_key.get("key_name", None)
             self.custom_open_to_accrual_vals = []
             if self.use_custom_trial_status_key.get("open_to_accrual_values", None) is None:
-                logging.error("Missing config field: trial_status_key.open_to_accrual_values. Must contain list of "
+                log.error("Missing config field: trial_status_key.open_to_accrual_values. Must contain list of "
                               "acceptable 'open to accrual' values")
                 exit(1)
 

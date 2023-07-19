@@ -49,23 +49,23 @@
       "id_field": "_id",
       "trial_key_mappings": {
         "HUGO_SYMBOL": {
-          "sample_key": "TRUE_HUGO_SYMBOL",
+          "sample_key": "HARMONIZED_HUGO_SYMBOL",
           "sample_value": "nomap"
         },
         "EXON": {
-          "sample_key": "TRUE_TRANSCRIPT_EXON",
+          "sample_key": "HARMONIZED_TRANSCRIPT_EXON",
           "sample_value": "nomap"
         },
         "PROTEIN_CHANGE": {
-          "sample_key": "TRUE_PROTEIN_CHANGE",
+          "sample_key": "HARMONIZED_PROTEIN_CHANGE",
           "sample_value": "nomap"
         },
         "WILDCARD_PROTEIN_CHANGE": {
-          "sample_key": "TRUE_PROTEIN_CHANGE",
+          "sample_key": "HARMONIZED_PROTEIN_CHANGE",
           "sample_value": "wildcard_regex"
         },
         "VARIANT_CLASSIFICATION": {
-          "sample_key": "TRUE_VARIANT_CLASSIFICATION",
+          "sample_key": "HARMONIZED_VARIANT_CLASSIFICATION",
           "sample_value": "nomap"
         },
         "VARIANT_CATEGORY": {
@@ -75,10 +75,6 @@
         "CNV_CALL": {
           "sample_key": "CNV_CALL",
           "sample_value": "cnv_map"
-        },
-        "WILDTYPE": {
-          "sample_key": "WILDTYPE",
-          "sample_value": "nomap"
         },
         "MMR_STATUS": {
           "sample_key": "MMR_STATUS",
@@ -97,7 +93,7 @@
           "sample_value": "nomap"
         },
         "TOBACCO_SIGNATURE": {
-          "sample_key": "TABACCO_STATUS",
+          "sample_key": "TOBACCO_STATUS",
           "sample_value": "nomap"
         },
         "TEMOZOLOMIDE_SIGNATURE": {
@@ -132,6 +128,7 @@
   "projections": {
     "genomic": [
       "TRUE_CDNA_CHANGE",
+      "HARMONIZED_CDNA_CHANGE",
       "REFERENCE_ALLELE",
       "ALLELE_FRACTION",
       "STRUCTURAL_VARIANT_COMMENT",
@@ -140,11 +137,15 @@
       "VARIANT_CATEGORY",
       "WILDTYPE",
       "TRUE_TRANSCRIPT_EXON",
+      "HARMONIZED_TRANSCRIPT_EXON",
       "TIER",
       "TRUE_HUGO_SYMBOL",
+      "HARMONIZED_HUGO_SYMBOL",
       "TRUE_PROTEIN_CHANGE",
+      "HARMONIZED_PROTEIN_CHANGE",
       "CNV_CALL",
       "TRUE_VARIANT_CLASSIFICATION",
+      "HARMONIZED_VARIANT_CLASSIFICATION",
       "MMR_STATUS",
       "STRUCTURAL_VARIANT_COMMENT",
       "CHROMOSOME",
@@ -152,11 +153,13 @@
       "POSITION",
       "APOBEC_STATUS",
       "POLE_STATUS",
-      "TABACCO_STATUS",
+      "TOBACCO_STATUS",
       "TEMOZOLOMIDE_STATUS",
       "UVA_STATUS",
       "LEFT_PARTNER_GENE",
+      "HARMONIZED_LEFT_PARTNER_GENE",
       "RIGHT_PARTNER_GENE",
+      "HARMONIZED_RIGHT_PARTNER_GENE",
       "STRUCTURAL_VARIANT_TYPE"
     ],
     "prior_treatments": [
@@ -187,95 +190,27 @@
       ]
     ]
   },
-  "trial_match_sorting": [
-    {
-      "show_in_ui": {
-        "True": 1,
-        "False": -1
-      },
-      "trial_curation_level_status": {
-        "closed": -1,
-        "open": 1
-      }
-    },
-    {
-      "match_type": {
-        "mmr": 20,
-        "tmb": 30
-      },
-      "temozolomide_status": {
-        "Yes": 40
-      },
-      "apobec_status": {
-        "Yes": 40
-      },
-      "tabacco_status": {
-        "Yes": 40
-      },
-      "pole_status": {
-        "Yes": 40
-      },
-      "uva_status": {
-        "Yes": 40
-      },
-      "tier": {
-        "1": 50,
-        "2": 60,
-        "3": 80,
-        "4": 90
-      },
-      "cnv_call": {
-        "Homozygous deletion": 70,
-        "High level amplification": 71,
-        "Gain": 72,
-        "Heterozygous deletion": 73
-      },
-      "wildtype": {
-        "False": 100,
-        "True": 100
-      }
-    },
-    {
-      "match_type": {
-        "variant": 0,
-        "gene": 1
-      }
-    },
-    {
-      "variant_category": {
-        "SV": 0
-      }
-    },
-    {
-      "cancer_type_match": {
-        "_SOLID_": 100,
-        "_LIQUID_": 100
-      }
-    },
-    {
-      "coordinating_center": {
-        "Dana-Farber Cancer Institute": 0
-      }
-    }
-  ],
   "indices": {
+    "clinical_run_history_trial_match": [
+      "clinical_id"
+    ],
     "genomic": [
       "SAMPLE_ID",
       "CLINICAL_ID",
       "VARIANT_CATEGORY",
-      "TRUE_HUGO_SYMBOL",
-      "TRUE_PROTEIN_CHANGE",
+      "HARMONIZED_HUGO_SYMBOL",
+      "HARMONIZED_PROTEIN_CHANGE",
       "CNV_CALL",
-      "TRUE_VARIANT_CLASSIFICATION",
+      "HARMONIZED_VARIANT_CLASSIFICATION",
       "MMR_STATUS",
       "APOBEC_STATUS",
       "POLE_STATUS",
-      "TABACCO_STATUS",
+      "TOBACCO_STATUS",
       "TEMOZOLOMIDE_STATUS",
       "UVA_STATUS",
-      "LEFT_PARTNER_GENE",
-      "RIGHT_PARTNER_GENE",
-      "TRUE_HUGO_SYMBOL"
+      "HARMONIZED_LEFT_PARTNER_GENE",
+      "HARMONIZED_RIGHT_PARTNER_GENE",
+      "HARMONIZED_HUGO_SYMBOL"
     ],
     "clinical": [
       "GENDER",
@@ -293,12 +228,8 @@
       "clinical_id",
       "protocol_no",
       "is_disabled",
-      "show_in_ui"
+      "show_in_ui",
+      ["protocol_no", "sample_id"]
     ]
-  },
-  "valid_clinical_reasons": [
-    [
-      "TUMOR_MUTATIONAL_BURDEN_PER_MEGABASE"
-    ]
-  ]
+  }
 }

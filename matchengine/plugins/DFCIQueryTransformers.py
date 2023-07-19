@@ -3,8 +3,6 @@ from __future__ import annotations
 import datetime
 import re
 
-from dateutil.relativedelta import relativedelta
-
 from matchengine.internals.query_transform import QueryTransformerContainer
 from matchengine.internals.typing.matchengine_types import QueryTransformerResult
 
@@ -73,7 +71,7 @@ class DFCIQueryTransformers(QueryTransformerContainer):
         if trial_value == 'Structural Variation':
             sample_value = variant_category_map.get(trial_value.lower())
             results = QueryTransformerResult()
-            results.add_result({'STRUCTURAL_VARIANT_COMMENT': None}, negate)
+            results.add_result({'STRUCTURAL_VARIANT_COMMENT': None, sample_key: sample_value}, negate)
             results.add_result({'STRUCTURED_SV': None, sample_key: sample_value}, negate)
             return results
         elif trial_value.lower() in variant_category_map:

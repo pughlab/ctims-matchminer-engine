@@ -1,0 +1,49 @@
+{
+  "protocol_no": "10-002",
+  "status": "open to accrual",
+  "treatment_list": {
+    "step": [
+      {
+        "step_internal_id": 111,
+        "step_code": "1",
+        "step_type": "Registration",
+        "match": [
+          {
+            "and": [
+              {
+                "genomic": {
+                  "variant_classification": "In_Frame_Del",
+                  "hugo_symbol": "EGFR",
+                  "variant_category": "Mutation"
+                }
+              },
+              {
+                "genomic": {
+                  "variant_classification": "In_Frame_Del",
+                  "hugo_symbol": "EGFR",
+                  "exon": "2",
+                  "variant_category": "!Mutation"
+                }
+              },
+              {
+                "genomic": {
+                  "variant_classification": "In_Frame_Del",
+                  "hugo_symbol": "EGFR",
+                  "exon": "3",
+                  "variant_category": "!Mutation"
+                }
+              }
+            ]
+          }
+        ]
+     }
+    ]
+  },
+  "_summary": {
+    "status": [
+      {
+        "value": "open to accrual"
+      }
+    ]
+  }
+}

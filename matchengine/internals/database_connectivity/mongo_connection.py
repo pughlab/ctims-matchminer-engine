@@ -55,7 +55,7 @@ class MongoDBConnection(object):
     db: Union[pymongo.database.Database, motor.motor_asyncio.AsyncIOMotorDatabase]
     client: Union[pymongo.MongoClient, motor.motor_asyncio.AsyncIOMotorClient]
 
-    def __init__(self, read_only=True, db=None, async_init=True):
+    def __init__(self, read_only=True, db=None, async_init=True, loop=None):
         """
         Default params to use values from an external SECRETS.JSON configuration file,
 
@@ -69,6 +69,7 @@ class MongoDBConnection(object):
         if not hasattr(self, 'secrets'):
             self.secrets = DefaultDBSecrets().get_secrets()
         self.db = db if db is not None else self.secrets.DB
+        self._loop = loop
 
     def __enter__(self):
         username = self.secrets.RO_USERNAME if self.read_only else self.secrets.RW_USERNAME
@@ -90,7 +91,7 @@ class MongoDBConnection(object):
         uri = (f"mongodb://{username_password_param}{self.secrets.HOST}:{self.secrets.PORT}/{self.db}"
                f"{'?' if uri_params else str()}{'&'.join(uri_params)}")
         if self.async_init:
-            self.client = motor.motor_asyncio.AsyncIOMotorClient(uri)
+            self.client = motor.motor_asyncio.AsyncIOMotorClient(uri, io_loop=self._loop)
         else:
             self.client = pymongo.MongoClient(uri)
         return self.client[self.db]
