@@ -7,11 +7,9 @@ import logging
 import os
 import csv
 import uuid
-from collections import defaultdict
+from typing import TYPE_CHECKING
 from multiprocessing import cpu_count
-from typing import TYPE_CHECKING, Iterable, Tuple
 
-import dateutil.parser
 import pymongo
 from pymongo import UpdateMany
 
@@ -34,9 +32,7 @@ from matchengine.internals.typing.matchengine_types import (
     UpdateResult
 )
 from matchengine.internals.utilities.query import (
-    execute_clinical_queries,
-    execute_extended_queries,
-    get_docs_results
+    execute_queries,
 )
 from matchengine.internals.utilities.task_utils import (
     run_query_task,
@@ -46,29 +42,25 @@ from matchengine.internals.utilities.task_utils import (
     run_check_indices_task, run_index_update_task
 )
 from matchengine.internals.utilities.update_match_utils import async_update_matches_by_protocol_no
-from matchengine.internals.utilities.utilities import (
+from matchengine.internals.utilities.plugin_loader import (
     find_plugins
 )
 
+from matchengine.plugin_stub import DBSecrets, ClinicalFilter, QueryProcessor, QueryTransformers, TrialMatchDocumentCreator
 if TYPE_CHECKING:
     from typing import (
-        NoReturn,
-        Any
-    )
-    from matchengine.internals.typing.matchengine_types import (
         Dict,
         Union,
         List,
         Set,
+    )
+    from matchengine.internals.typing.matchengine_types import (
         ClinicalID,
         MultiCollectionQuery,
         MatchReason,
         ObjectId,
         Trial,
-        QueryNode,
-        TrialMatch,
         Task,
-        QueryNodeContainer
     )
 
 log = logging.getLogger('matchengine')
@@ -102,6 +94,7 @@ class MatchEngine(object):
             self._task_q.put_nowait(PoisonPill())
         await self._task_q.join()
 
+
     def __exit__(self, exception_type, exception_value, exception_traceback):
         """
         Teardown database connections (async + synchronous) and async workers gracefully.
@@ -111,11 +104,14 @@ class MatchEngine(object):
         self._db_ro.__exit__(exception_type, exception_value, exception_traceback)
         self._db_rw.__exit__(exception_type, exception_value, exception_traceback)
         if not self.loop.is_closed():
-            self._loop.run_until_complete(self._async_exit())
-            self._loop.close()
+            if not exception_type:
+                self._loop.run_until_complete(self._async_exit())
+                self._loop.close()
 
     def __init__(
             self,
+            config: Union[str, dict] = None,
+            plugin_dir: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'defaults', 'plugins'),
             sample_ids: Set[str] = None,
             protocol_nos: Set[str] = None,
             match_on_deceased: bool = False,
@@ -123,71 +119,109 @@ class MatchEngine(object):
             num_workers: int = cpu_count() * 5,
             visualize_match_paths: bool = False,
             fig_dir: str = None,
-            config: Union[str, dict] = os.path.join(
-                os.path.dirname(os.path.dirname(__file__)),
-                'config',
-                'dfci_config.json'),
-            plugin_dir: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'plugins'),
             db_name: str = None,
-            match_document_creator_class: str = "DFCITrialMatchDocumentCreator",
-            query_node_transformer_class: str = "DFCIQueryNodeTransformer",
-            query_node_subsetter_class: str = "DFCIQueryNodeClinicalIDSubsetter",
-            query_node_container_transformer_class: str = "DFCIQueryContainerTransformer",
-            db_secrets_class: str = None,
             ignore_run_log: bool = False,
             skip_run_log_entry: bool = False,
             trial_match_collection: str = "trial_match",
             drop: bool = False,
             exit_after_drop: bool = False,
             drop_accept: bool = False,
-            resource_dirs: List = None,
             chunk_size: int = 1000,
             age_comparison_date = None,
             delete_run_logs = False,
             start_time_utc = None
     ):
-        self.resource_dirs = list()
+        self.run_id = uuid.uuid4()
+
+        log.info(f"Initializing matchengine with run id: {self.run_id.hex}")
         self.update_trackers_by_protocol = {}
         self.global_update_tracker = None
-        self.resource_dirs.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'ref'))
-        if resource_dirs is not None:
-            self.resource_dirs.extend(resource_dirs)
         self.trial_match_collection = trial_match_collection
-        self.age_comparison_date = age_comparison_date or datetime.date.today()
-        self.start_time_utc = start_time_utc or datetime.datetime.now(datetime.timezone.utc)
-        self.run_id = uuid.uuid4()
-        log.info(f"initializing matchengine with run id: {self.run_id.hex}")
-        log.info(f"age comparison date: {age_comparison_date}")
+        age_comparison_date = age_comparison_date or datetime.date.today()
+        start_time_utc = start_time_utc or datetime.datetime.now(datetime.timezone.utc)
+        self.age_comparison_date = age_comparison_date
+        self.start_time_utc = start_time_utc
         self.run_log_entries = dict()
         self.ignore_run_log = ignore_run_log
         self.skip_run_log_entry = skip_run_log_entry
         self._protocol_nos_param = list(protocol_nos) if protocol_nos is not None else protocol_nos
         self._sample_ids_param = list(sample_ids) if sample_ids is not None else sample_ids
         self.chunk_size = chunk_size
+        self._sequence_number = 0
+        self.cache = Cache()
+        self.match_on_closed = match_on_closed
+        self.match_on_deceased = match_on_deceased
+        self.num_workers = num_workers
+        self.visualize_match_paths = visualize_match_paths
+        self.fig_dir = fig_dir
+        self._matches = {}
+        self._clinical_ids_by_protocol = {}
 
-        if config.__class__ is str:
+        log.info(f"Age comparison date: {self.age_comparison_date}")
+
+        config = config or os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            'defaults',
+            'config.json'
+        )
+        if isinstance(config, str) or isinstance(config, os.PathLike):
+            log.info(f"Loading config from: {config}")
             with open(config) as config_file_handle:
                 self.config = json.load(config_file_handle)
         else:
             self.config = config
 
-        self.match_criteria_transform = MatchCriteriaTransform(self.config, self.resource_dirs)
-
         self.plugin_dir = plugin_dir
-        self.match_document_creator_class = match_document_creator_class
-        self.query_node_transformer_class = query_node_transformer_class
-        self.query_node_container_transformer_class = query_node_container_transformer_class
-        self.query_node_subsetter_class = query_node_subsetter_class
-        self.db_secrets_class = db_secrets_class
-        find_plugins(self)
+        plugins = find_plugins(plugin_dir, {
+            QueryTransformers,
+            TrialMatchDocumentCreator,
+            DBSecrets,
+            ClinicalFilter,
+            QueryProcessor
+        })
+        db_secrets = plugins[DBSecrets]()
+        query_transformers = plugins[QueryTransformers]()
+        self.trial_match_document_creator = plugins[TrialMatchDocumentCreator]()
+        self.clinical_filter = plugins[ClinicalFilter]()
+        self.query_processor = plugins[QueryProcessor]()
+
+        self.match_criteria_transform = MatchCriteriaTransform(self.config, query_transformers)
 
         self._db_ro = MongoDBConnection(read_only=True, async_init=False,
-                                        db=db_name)
+                                        db=db_name, secrets=db_secrets)
         self.db_ro = self._db_ro.__enter__()
         self._db_rw = MongoDBConnection(read_only=False, async_init=False,
-                                        db=db_name)
+                                        db=db_name, secrets=db_secrets)
         self.db_rw = self._db_rw.__enter__()
         log.info(f"connected to database {self.db_ro.name}")
+
+        # We expose a synchronous API but use asyncio internally, so we
+        # create a new event loop to run things in.
+        self._loop = asyncio.new_event_loop()
+        self._loop.slow_callback_duration = 0.5 # Reduce logging noise if debugging enabled
+
+        # create async mongo connections for event loop
+        self._async_db_ro = MongoDBConnection(read_only=True, db=db_name, loop=self._loop, secrets=db_secrets)
+        self.async_db_ro = self._async_db_ro.__enter__()
+        self._async_db_rw = MongoDBConnection(read_only=False, db=db_name, loop=self._loop, secrets=db_secrets)
+        self.async_db_rw = self._async_db_rw.__enter__()
+
+        # create a task queue for async tasks
+        self._task_q = asyncio.queues.Queue(loop=self._loop)
+
+
+        # create "workers" which handle async tasks from the task_q
+        # general pattern is to put a series of tasks in the queue, then await task_q.join()
+        # and the workers will complete the tasks.
+        # this is done instead of using asyncio.gather as the event loop will hang if >100s of coroutines/futures
+        # are placed at once, especially if they're I/O related. The epoll (linux) and kqueue (macOS/BSD)
+        # selectors used in the event loop implementation will grind to a halt with too many open sockets, and
+        # as we can have 1000's of requests for a single trial, we need to limit the effective I/O concurrency.
+        # In effect, the effective concurrency is the number of workers.
+        self._workers = {
+            worker_id: self._loop.create_task(self._queue_worker(worker_id))
+            for worker_id in range(0, self.num_workers)
+        }
 
         if delete_run_logs:
             log.info("deleting run logs")
@@ -214,16 +248,7 @@ class MatchEngine(object):
             if exit_after_drop:
                 exit(0)
 
-        # A cache-like object used to accumulate query results
-        self.cache = Cache()
-        self.match_on_closed = match_on_closed
-        self.match_on_deceased = match_on_deceased
-        self.num_workers = num_workers
-        self.visualize_match_paths = visualize_match_paths
-        self.fig_dir = fig_dir
-        self._matches = {}
-        self._clinical_ids_by_protocol = {}
-
+        log.debug("Loading trials and run logs")
         self.trials = self.get_trials(protocol_nos)
         if protocol_nos is None:
             self.protocol_nos = sorted(self.trials.keys())
@@ -231,45 +256,17 @@ class MatchEngine(object):
             self.protocol_nos = protocol_nos
         self._run_log_history = self._populate_run_log_history()
 
+        log.debug("Performing initial clinical lookup")
         self._clinical_data = self._get_clinical_data(sample_ids)
+        self._clinical_filtered_out = {
+            cid for cid in self._clinical_data
+            if not self.clinical_filter.should_match(self._clinical_data[cid])
+        }
         self.clinical_mapping = self.get_clinical_ids_from_sample_ids()
         self.clinical_deceased = self.get_clinical_deceased()
-        self.clinical_birth_dates = self.get_clinical_birth_dates()
-        self.clinical_update_mapping = self.get_clinical_updated_mapping()
-        self.clinical_extra_field_lookup = self.get_extra_field_lookup(self._clinical_data,
-                                                                       "clinical")
         self.clinical_ids = set(self.clinical_mapping.keys())
 
-        # instantiate a new async event loop to allow class to be used as if it is synchronous
-        # NOTE: asyncio's "run_until_complete" function suffices to ensure that we're
-        # not nesting event loops.
-        self._loop = asyncio.new_event_loop()
-        self._loop.slow_callback_duration = 0.5 # Reduce logging noise
-
-        # create async mongo connections for event loop
-        self._async_db_ro = MongoDBConnection(read_only=True, db=db_name, loop=self._loop)
-        self.async_db_ro = self._async_db_ro.__enter__()
-        self._async_db_rw = MongoDBConnection(read_only=False, db=db_name, loop=self._loop)
-        self.async_db_rw = self._async_db_rw.__enter__()
-
-        # create a task queue for async tasks
-        self._task_q = asyncio.queues.Queue(loop=self._loop)
-
-        self._sequence_number = 0
-
-        # create "workers" which handle async tasks from the task_q
-        # general pattern is to put a series of tasks in the queue, then await task_q.join()
-        # and the workers will complete the tasks.
-        # this is done instead of using asyncio.gather as the event loop will hang if >100s of coroutines/futures
-        # are placed at once, especially if they're I/O related. The epoll (linux) and kqueue (macOS/BSD)
-        # selectors used in the event loop implementation will grind to a halt with too many open sockets, and
-        # as we can have 1000's of requests for a single trial, we need to limit the effective I/O concurrency.
-        # In effect, the effective concurrency is the number of workers.
-        self._workers = {
-            worker_id: self._loop.create_task(self._queue_worker(worker_id))
-            for worker_id in range(0, self.num_workers)
-        }
-
+        log.debug("Checking indices")
         self._loop.run_until_complete(self._async_init())
 
     def create_output_csv(self):
@@ -313,35 +310,21 @@ class MatchEngine(object):
         First execute the clinical query. If no records are returned short-circuit and return.
         """
         # Note: preserve copy here so later things don't mutate it
-        new_clinical_ids = clinical_ids - (set() if self.match_on_deceased else self.clinical_deceased)
-        log.debug(f"Vital status filter narrowed {len(clinical_ids)} samples to {len(new_clinical_ids)}")
+        new_clinical_ids = clinical_ids
+        new_clinical_ids = new_clinical_ids - self._clinical_filtered_out
+        if not self.match_on_deceased:
+            new_clinical_ids = new_clinical_ids - self.clinical_deceased
+
+        log.debug(f"Initial filtering narrowed {len(clinical_ids)} samples to {len(new_clinical_ids)}")
         clinical_ids = new_clinical_ids
 
-        new_clinical_ids, clinical_match_reasons = \
-            await execute_clinical_queries(self, multi_collection_query, set(clinical_ids))
-        log.debug(f"Clinical queries narrowed {len(clinical_ids)} samples to {len(new_clinical_ids)}")
+        new_clinical_ids, all_match_reasons = \
+            await execute_queries(self, multi_collection_query, set(clinical_ids))
+        log.debug(f"Queries narrowed {len(clinical_ids)} samples to {len(new_clinical_ids)}")
         clinical_ids = new_clinical_ids
 
-        new_clinical_ids, _, all_match_reasons = await (
-            execute_extended_queries(self,
-                                        multi_collection_query,
-                                        set(clinical_ids),
-                                        clinical_match_reasons)
-        )
-        log.debug(f"Extended queries narrowed {len(clinical_ids)} samples to {len(new_clinical_ids)}")
-        clinical_ids = new_clinical_ids
 
-        old_len = len(all_match_reasons)
-        for k in list(all_match_reasons.keys()):
-            if k not in clinical_ids:
-                del all_match_reasons[k]
-            if len(all_match_reasons[k]) == 0:
-                del all_match_reasons[k]
-        log.debug(f"Postprocessing narrowed {old_len} samples to {len(all_match_reasons)}")
-
-        docs = await get_docs_results(self, all_match_reasons)
-
-        return all_match_reasons, docs
+        return all_match_reasons
 
     async def _queue_worker(self, worker_id: int) -> None:
         """
@@ -370,22 +353,6 @@ class MatchEngine(object):
 
             elif task_class is IndexUpdateTask:
                 await run_index_update_task(*args)
-
-    def query_node_transform(self, query_node: QueryNode) -> NoReturn:
-        """Stub function to be overriden by plugin"""
-        pass
-
-    def query_node_container_transform(self, query_node_container: QueryNodeContainer) -> NoReturn:
-        """Stub function to be overriden by plugin"""
-        pass
-
-    def extended_query_node_clinical_ids_subsetter(
-            self,
-            query_node: QueryNode,
-            clinical_ids: Iterable[ClinicalID]
-    ) -> Tuple[bool, Set[ClinicalID]]:
-        """Stub function to be overriden by plugin"""
-        return {clinical_id for clinical_id in clinical_ids}
 
     def update_matches_for_protocol_number(self, protocol_no: str, dry_run = False):
         """
@@ -447,6 +414,7 @@ class MatchEngine(object):
         Asynchronous function used by get_matches_for_trial, not meant to be called externally.
         Gets the matches for a given trial
         """
+        log.info(f"Preparing to mine matches for {protocol_no}")
         tasks, clinical_ids_to_run = self._get_tasks_and_clinical_ids_to_run(protocol_no)
         self.create_run_log_entry(protocol_no)
         self._clinical_ids_by_protocol[protocol_no] = clinical_ids_to_run
@@ -481,6 +449,8 @@ class MatchEngine(object):
                 # for each match path, translate the path into valid mongo queries
                 for match_path in match_paths:
                     query = translate_match_path(self, match_clause, match_path)
+                    if query is None:
+                        continue
                     for criteria_node in match_path.criteria_list:
                         for criteria in criteria_node.criteria:
                             # check if node has any age criteria, to know to check for newly qualifying patients
@@ -538,28 +508,21 @@ class MatchEngine(object):
             '_updated': 1,
         }
         projection.update({
-            item[0]: 1
+            item: 1
             for item
-            in self.config.get("extra_initial_lookup_fields", dict()).get("clinical", list())})
-        return {result['_id']: result
-                for result in
-                self.db_ro.clinical.find(query, projection)}
-
-    def get_clinical_updated_mapping(self) -> Dict[ObjectId: datetime.datetime]:
-        return {clinical_id: clinical_data.get('_updated', None) for clinical_id, clinical_data in
-                self._clinical_data.items()}
+            in self.config["initial_lookup"]["extra_fields"]
+        })
+        return {
+            result['_id']: result
+            for result in
+            self.db_ro.get_collection(self.config["initial_lookup"]["collection"]).find(query, projection)
+        }
 
     def get_clinical_deceased(self) -> Set[ClinicalID]:
         return {clinical_id
                 for clinical_id, clinical_data
                 in self._clinical_data.items()
                 if clinical_data.get('VITAL_STATUS') == 'deceased'}
-
-    def get_clinical_birth_dates(self) -> Dict[ClinicalID, int]:
-        return {clinical_id: clinical_data.get('BIRTH_DATE_INT')
-                for clinical_id, clinical_data
-                in self._clinical_data.items()
-                }
 
     def get_clinical_ids_from_sample_ids(self) -> Dict[ClinicalID, str]:
         """
@@ -595,7 +558,6 @@ class MatchEngine(object):
         summary_status_open = trial.get("_summary", dict()).get("status", [dict()])[0].get("value", str()).lower() in {"open to accrual"}
 
         # By default, first check if _summary.status.value: "open to accrual"
-        # as this is DFCI's default implementation
         if summary_status_open:
             return True
 
@@ -693,6 +655,7 @@ class MatchEngine(object):
 
         # Get records updated since last run
         updated_clinical_ids = set()
+        clinical_data = self._clinical_data
         if not ignore_clinical_updates:
             prev_run_start_time = run_log['start_time_utc']
             extra_time = datetime.timedelta(seconds=60) # compensate for any clock skew
@@ -703,7 +666,7 @@ class MatchEngine(object):
                 f"and {self.start_time_utc.isoformat(timespec='seconds')}"
             )
             for clinical_id in clinical_ids:
-                updated_at = self.clinical_update_mapping[clinical_id]
+                updated_at = clinical_data[clinical_id].get('_updated')
                 if updated_at is None or updated_at > prev_run_start_time:
                     updated_clinical_ids.add(clinical_id)
             log.debug(f"Potentially modified records: {len(updated_clinical_ids)}")
@@ -752,8 +715,8 @@ class MatchEngine(object):
         # would otherwise skip them
         :return:
         """
-        age_range_to_date_query = getattr(self.match_criteria_transform.query_transformers,
-                                          'age_range_to_date_int_query')
+        clinical_data = self._clinical_data
+        age_range_to_date_query = self.match_criteria_transform.query_transformers['age_range_to_date_int_query']
         result_criteria_key_map = {
             '$lte': lambda x, y: x <= y,
             '$gte': lambda x, y: x >= y,
@@ -765,14 +728,14 @@ class MatchEngine(object):
         old_criterion = age_range_to_date_query(
             sample_key=None,
             trial_value=age_criterion,
-            compare_date=last_age_comparison_date
-        ).results[0].query[None]
+            current_date=last_age_comparison_date
+        ).results[0][0][None]
 
         new_criterion = age_range_to_date_query(
             sample_key=None,
             trial_value=age_criterion,
-            compare_date=self.age_comparison_date
-        ).results[0].query[None]
+            current_date=self.age_comparison_date
+        ).results[0][0][None]
 
         old_criterion_parts = list(old_criterion.items())
         assert len(old_criterion_parts) == 1
@@ -790,20 +753,14 @@ class MatchEngine(object):
         for clinical_id in clinical_ids:
             if clinical_id in self.clinical_deceased and not self.match_on_deceased:
                 continue
-            birth_date = self.clinical_birth_dates[clinical_id]
-            if birth_date is None:
-                ids_aged.add(clinical_id)
-            else:
+            birth_date = clinical_data[clinical_id].get('BIRTH_DATE_INT')
+            if birth_date is not None:
                 old_criterion_matches = op_func(birth_date, old_criterion_val)
                 new_criterion_matches = op_func(birth_date, new_criterion_val)
                 if old_criterion_matches != new_criterion_matches:
                     ids_aged.add(clinical_id)
 
         return ids_aged
-
-    def create_trial_matches(self, trial_match: TrialMatch) -> List[Dict]:
-        """Stub function to be overriden by plugin"""
-        return []
 
     @property
     def task_q(self):
@@ -816,38 +773,6 @@ class MatchEngine(object):
     @property
     def matches(self):
         return self._matches
-
-    def get_extra_field_mapping(self, raw_mapping: Dict[ObjectId, Any], key: str) -> Dict[Any: Set[
-        ObjectId]]:
-        fields = self.config.get("extra_initial_mapping_fields", dict()).get(key, list())
-        mapping = defaultdict(lambda: defaultdict(set))
-        for obj_id, raw_map in raw_mapping.items():
-            for field_name, field_transform in fields:
-                field_value = raw_map.get(field_name)
-                if field_transform == "date":
-                    if field_value.__class__ is not datetime.datetime:
-                        try:
-                            field_value = dateutil.parser.parse(raw_map.get(field_name))
-                        except ValueError:
-                            field_value = None
-                mapping[field_name][field_value].add(obj_id)
-        return mapping
-
-    def get_extra_field_lookup(self, raw_mapping: Dict[ObjectId, Any], key: str) -> Dict[Any: Set[ObjectId]]:
-        fields = self.config.get("extra_initial_lookup_fields", dict()).get(key, list())
-        mapping = defaultdict(dict)
-        for obj_id, raw_map in raw_mapping.items():
-            for field_name, field_transform in fields:
-                field_value = raw_map.get(field_name)
-                if field_transform == "date":
-                    if field_value.__class__ is not datetime.datetime:
-                        try:
-                            field_value = dateutil.parser.parse(raw_map.get(field_name))
-                        except (ValueError, TypeError):
-                            field_value = None
-                if field_value is not None:
-                    mapping[field_name][obj_id] = field_value
-        return mapping
 
     def drop_existing_matches(self, protocol_nos: List[str] = None, sample_ids: List[str] = None):
         drop_query = dict()

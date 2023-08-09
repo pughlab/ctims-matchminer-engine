@@ -1,20 +1,13 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setup(
     name="MatchEngine V2",
-    version="2.2.1",
-    packages=[
-        "matchengine",
-        "matchengine.internals",
-        "matchengine.internals.database_connectivity",
-        "matchengine.internals.plugin_helpers",
-        "matchengine.internals.typing",
-        "matchengine.internals.utilities",
-        "matchengine.plugins"
-    ],
+    version="2.2.2",
+    packages=find_packages(),
+    package_data={'matchengine': ['defaults/**/*']},
     author='Eric Marriott, Ethan Siegel',
     author_email='esiegel@ds.dfci.harvard.edu',
     description='Open source engine for matching cancer patients to precision medicine clinical trials (V2).',

@@ -3,6 +3,8 @@
     "clinical": {
       "query_collection": "clinical",
       "join_field": "_id",
+      "break_queries_into_parts": true,
+      "join_order": 10,
       "trial_key_mappings": {
         "AGE_NUMERICAL": {
           "sample_key": "BIRTH_DATE_INT",
@@ -38,6 +40,8 @@
     "genomic": {
       "query_collection": "genomic",
       "join_field": "CLINICAL_ID",
+      "break_queries_into_parts": false,
+      "join_order": 20,
       "trial_key_mappings": {
         "HUGO_SYMBOL": {
           "sample_key": "TRUE_HUGO_SYMBOL",

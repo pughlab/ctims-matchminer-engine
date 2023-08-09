@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 from collections import deque
-from itertools import cycle, chain
 from typing import TYPE_CHECKING
 
 import networkx as nx
@@ -10,24 +9,15 @@ import networkx as nx
 from matchengine.internals.typing.matchengine_types import (
     MatchClauseData,
     ParentPath,
-    MatchClauseLevel,
     MatchTree,
     NodeID,
     MatchCriteria,
     MatchCriterion,
     MultiCollectionQuery,
-    QueryNode,
-    QueryTransformerResult,
-    QueryNodeContainer
 )
-
+from matchengine.internals.match_query_translator import build_query_node_container
 if TYPE_CHECKING:
-    from typing import (
-        Generator,
-        Dict,
-        Any,
-        Tuple
-    )
+    from typing import Generator, Dict, Any, Tuple
     from matchengine.internals.engine import MatchEngine
 
 log = logging.getLogger("matchengine")
@@ -48,14 +38,14 @@ def extract_match_clauses_from_trial(matchengine: MatchEngine, trial) -> Generat
         # include top level match clauses
         if key == 'match':
             parent_path = ParentPath(tuple())
-            match_clause_data = MatchClauseData(val,
-                                                None,
-                                                None,
-                                                None,
-                                                parent_path,
-                                                None,
-                                                None,
-                                                trial[matchengine.match_criteria_transform.trial_identifier])
+            match_clause_data = MatchClauseData(
+                val,
+                None,
+                parent_path,
+                None,
+                None,
+                trial[matchengine.match_criteria_transform.trial_identifier],
+            )
             yield match_clause_data
         else:
             process_q.append((tuple(), key, val))
@@ -66,44 +56,37 @@ def extract_match_clauses_from_trial(matchengine: MatchEngine, trial) -> Generat
         if parent_value.__class__ is dict:
             for inner_key, inner_value in parent_value.items():
                 parent_path = ParentPath(path + (parent_key, inner_key))
-                # this funky logic is so that level/internal is None if node is not a match clause
-                level = MatchClauseLevel(
-                    matchengine.match_criteria_transform.level_mapping.get(
-                        next(
-                            chain(
-                                [item for item in parent_path[::-1] if item.__class__ is not int and item != 'match'],
-                                [None]
-                            )
-                        )))
-
-                internal_id = parent_value.get(
-                    matchengine.match_criteria_transform.internal_id_mapping.get(level, None), None)
-                code = parent_value.get(matchengine.match_criteria_transform.code_mapping.get(level, None), None)
                 if inner_key == 'match':
+                    # parent_path_str is the JSON path within the trial that we are currently processing
+                    parent_path_str = '.'.join(str(item) for item in parent_path)
                     is_suspended = False
                     match_level = path[-1]
                     if match_level == 'step':
-                        if all([arm.get('arm_suspended', 'n').lower().strip() == 'y'
-                                for arm in parent_value.get('arm', list())]):
-                            log.debug(f"{match_level} {internal_id} has no open arms")
+                        if all(
+                            [
+                                arm.get('arm_suspended', 'n').lower().strip() == 'y'
+                                for arm in parent_value.get('arm', list())
+                            ]
+                        ):
+                            log.debug(f"{match_level} {parent_path_str} has no open arms")
                             is_suspended = True
                     elif match_level == 'arm':
                         if parent_value.get('arm_suspended', 'n').lower().strip() == 'y':
-                            log.debug(f"{match_level} {internal_id} is suspended")
+                            log.debug(f"{match_level} {parent_path_str} is suspended")
                             is_suspended = True
                     elif match_level == 'dose_level':
                         if parent_value.get('level_suspended', 'n').lower().strip() == 'y':
-                            log.debug(f"{match_level} {internal_id} is suspended")
+                            log.debug(f"{match_level} {parent_path_str} is suspended")
                             is_suspended = True
 
-                    yield MatchClauseData(inner_value,
-                                          internal_id,
-                                          code,
-                                          is_suspended,
-                                          parent_path,
-                                          level,
-                                          parent_value,
-                                          trial[matchengine.match_criteria_transform.trial_identifier])
+                    yield MatchClauseData(
+                        inner_value,
+                        is_suspended,
+                        parent_path,
+                        match_level,
+                        parent_value,
+                        trial[matchengine.match_criteria_transform.trial_identifier],
+                    )
                 else:
                     process_q.append((path + (parent_key,), inner_key, inner_value))
         elif parent_value.__class__ is list:
@@ -139,6 +122,7 @@ def create_match_tree(matchengine, match_clause_data: MatchClauseData) -> MatchT
         import matplotlib.pyplot as plt
         from networkx.drawing.nx_agraph import graphviz_layout
         import os
+
         labels = {node: graph.nodes[node]['label'] for node in graph.nodes}
         for node in graph.nodes:
             if graph.nodes[node]['label_list']:
@@ -146,9 +130,16 @@ def create_match_tree(matchengine, match_clause_data: MatchClauseData) -> MatchT
         pos = graphviz_layout(graph, prog="dot", root=0)
         plt.figure(figsize=(30, 30))
         nx.draw_networkx(graph, pos, with_labels=True, node_size=[600 for _ in graph.nodes], labels=labels)
-        plt.savefig(os.path.join(matchengine.fig_dir, (f'{match_clause_data.protocol_no}-'
-                                                       f'{match_clause_data.match_clause_level}-'
-                                                       f'{match_clause_data.internal_id}.png')))
+        plt.savefig(
+            os.path.join(
+                matchengine.fig_dir,
+                (
+                    f'{match_clause_data.protocol_no}-'
+                    f'{match_clause_data.match_clause_level}-'
+                    f'{match_clause_data.internal_id}.png'
+                ),
+            )
+        )
         return plt
 
     while process_q:
@@ -163,8 +154,7 @@ def create_match_tree(matchengine, match_clause_data: MatchClauseData) -> MatchT
                 for item in value:
                     for inner_label, inner_value in item.items():
                         if inner_label.startswith("or"):
-                            process_q.appendleft(
-                                (parent_id if parent_is_and else node_id, {inner_label: inner_value}))
+                            process_q.appendleft((parent_id if parent_is_and else node_id, {inner_label: inner_value}))
                         elif inner_label.startswith("and"):
                             process_q.append((parent_id if parent_is_and else node_id, {inner_label: inner_value}))
                         else:
@@ -175,25 +165,29 @@ def create_match_tree(matchengine, match_clause_data: MatchClauseData) -> MatchT
                     graph.nodes[parent_id]['label_list'].extend(label_list)
                 else:
                     graph.add_edges_from([(parent_id, node_id)])
-                    graph.nodes[node_id].update({
-                        'criteria_list': criteria_list,
-                        'is_and': True,
-                        'is_or': False,
-                        'or_nodes': set(),
-                        'label': str(node_id) + ' - ' + label,
-                        'label_list': label_list
-                    })
+                    graph.nodes[node_id].update(
+                        {
+                            'criteria_list': criteria_list,
+                            'is_and': True,
+                            'is_or': False,
+                            'or_nodes': set(),
+                            'label': str(node_id) + ' - ' + label,
+                            'label_list': label_list,
+                        }
+                    )
                     node_id += 1
             elif label.startswith("or"):
                 or_node_id = node_id
                 graph.add_node(or_node_id)
-                graph.nodes[or_node_id].update({
-                    'criteria_list': list(),
-                    'is_and': False,
-                    'is_or': True,
-                    'label': str(or_node_id) + ' - ' + label,
-                    'label_list': list()
-                })
+                graph.nodes[or_node_id].update(
+                    {
+                        'criteria_list': list(),
+                        'is_and': False,
+                        'is_or': True,
+                        'label': str(or_node_id) + ' - ' + label,
+                        'label_list': list(),
+                    }
+                )
                 node_id += 1
                 for item in value:
                     process_q.append((or_node_id, item))
@@ -218,13 +212,15 @@ def create_match_tree(matchengine, match_clause_data: MatchClauseData) -> MatchT
                     graph.nodes[parent_id]['label_list'].append(label)
                 else:
                     graph.add_node(node_id)
-                    graph.nodes[node_id].update({
-                        'criteria_list': [values],
-                        'is_or': False,
-                        'is_and': True,
-                        'label': str(node_id) + ' - ' + label,
-                        'label_list': list()
-                    })
+                    graph.nodes[node_id].update(
+                        {
+                            'criteria_list': [values],
+                            'is_or': False,
+                            'is_and': True,
+                            'label': str(node_id) + ' - ' + label,
+                            'label_list': list(),
+                        }
+                    )
                     graph.add_edge(parent_id, node_id)
                     node_id += 1
 
@@ -244,78 +240,58 @@ def get_match_paths(match_tree: MatchTree) -> Generator[MatchCriterion]:
             leaves.append(node)
     for leaf in leaves:
         for path in nx.all_simple_paths(match_tree, 0, leaf) if leaf != 0 else [[leaf]]:
-            match_path = MatchCriterion(list())
+            match_path = []
             for depth, node in enumerate(path):
                 if match_tree.nodes[node]['criteria_list']:
-                    match_path.add_criteria(MatchCriteria(match_tree.nodes[node]['criteria_list'], depth, node))
-            if match_path:
-                yield match_path
+                    match_path.append(MatchCriteria(match_tree.nodes[node]['criteria_list'], depth, node))
+            yield MatchCriterion(match_path)
 
 
-def translate_match_path(matchengine,
-                         match_clause_data: MatchClauseData,
-                         match_criterion: MatchCriterion) -> MultiCollectionQuery:
+
+def translate_match_path(
+    matchengine: MatchEngine,
+    match_clause_data: MatchClauseData,
+    match_criterion: MatchCriterion,
+) -> MultiCollectionQuery:
     """
-    Translate the keys/values from the trial curation into keys/values used in a extended_attributes/clinical document.
-    Uses an external config file ./config/config.json
-
+    Translate a set of match criteria into QueryNodeContainers.
     """
-    multi_collection_query = MultiCollectionQuery(list(), list())
-    query_cache = set()
+    partial_qncs = []
     for node in match_criterion.criteria_list:
         for criteria in node.criteria:
-            for node_name, values in criteria.items():
-                trial_key_mappings = matchengine.match_criteria_transform.ctml_collection_mappings[node_name][
-                    'trial_key_mappings']
-                initial_query_node = QueryNode(node_name, node.node_id, criteria, node.depth, list(), None)
-                query_nodes = list()
-                query_nodes.append(initial_query_node)
-                for trial_key, trial_value in values.items():
-                    trial_key_settings = trial_key_mappings.get(trial_key.upper(), dict())
+            for node_name in sorted(criteria):
+                node_value = criteria[node_name]
+                criteria_info = []
+                config = matchengine.match_criteria_transform.ctml_collection_mappings[node_name]
+                if config['break_queries_into_parts']:
+                    for key in sorted(node_value):
+                        criteria_info.append({key: node_value[key]})
+                else:
+                    criteria_info.append(node_value)
+                for values in criteria_info:
+                    query_node_container = build_query_node_container(matchengine, node_name, node.depth, values)
+                    # Filter out empty queries:
+                    any_nonempty = any((not qn.is_empty()) for qn in query_node_container.query_nodes)
+                    if any_nonempty:
+                        partial_qncs.append(query_node_container)
 
-                    if trial_key_settings.get('ignore', False):
-                        continue
+    result_qncs = []
+    dedup_cache = set()
+    for query_node_container in partial_qncs:
 
-                    sample_value_function_name = trial_key_settings.get('sample_value', 'nomap')
-                    sample_function = getattr(matchengine.match_criteria_transform.query_transformers,
-                                              sample_value_function_name)
-                    sample_function_args = dict(sample_key=trial_key.upper(),
-                                                trial_value=trial_value,
-                                                parent_path=match_clause_data.parent_path,
-                                                trial_path=node_name,
-                                                trial_key=trial_key,
-                                                compare_date=matchengine.age_comparison_date)
-                    sample_function_args.update(trial_key_settings)
-                    result: QueryTransformerResult = sample_function(**sample_function_args)
-                    to_create = len(result.results) - 1
-                    created_nodes = [query_node.__copy__()
-                                     for _
-                                     in range(0, to_create)
-                                     for query_node
-                                     in query_nodes]
-                    for initial_query_node in query_nodes:
-                        query_part = result.results[0]
-                        initial_query_node.add_query_part(query_part)
-                    for new_query_node, query_part in zip(created_nodes, cycle(result.results[1::])):
-                        new_query_node.add_query_part(query_part)
-                        query_nodes.append(new_query_node)
-                    for query_node in query_nodes:
-                        query_node.exclusion = (True
-                                                if (query_node.query_parts[-1].negate
-                                                    or query_node.exclusion)
-                                                else False)
-                query_node_container = QueryNodeContainer(list())
-                sibling_nodes = len(query_nodes)
-                for query_node in query_nodes:
-                    if query_node.exclusion is not None:
-                        query_node.sibling_nodes = sibling_nodes
-                        matchengine.query_node_transform(query_node)
-                        query_node.finalize()
-                        query_node_hash = query_node.hash()
-                        if query_node_hash not in query_cache:
-                            query_cache.add(query_node_hash)
-                            query_node_container.query_nodes.append(query_node)
-                matchengine.query_node_container_transform(query_node_container)
-                node_type = 'clinical' if node_name == 'clinical' else 'extended_attributes'
-                getattr(multi_collection_query, node_type).append(query_node_container)
+        # Filter out duplicate query node containers:
+        qnc_hash_key = frozenset(
+            (qn.raw_collection, query_node_container.exclusion, qn.raw_query_hash()) for qn in query_node_container.query_nodes
+        )
+        if qnc_hash_key in dedup_cache:
+            continue
+        dedup_cache.add(qnc_hash_key)
+
+        # Add to the list of query node containers:
+        result_qncs.append(query_node_container)
+
+    if not result_qncs:
+        return None
+
+    multi_collection_query = MultiCollectionQuery(result_qncs)
     return multi_collection_query
