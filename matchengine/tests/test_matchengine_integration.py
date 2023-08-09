@@ -68,9 +68,6 @@ class IntegrationTestMatchengine(TestCase):
             match_on_closed=kwargs.get('match_on_closed', True),
             num_workers=kwargs.get('num_workers', 1),
             visualize_match_paths=kwargs.get('visualize_match_paths', False),
-            config=kwargs.get('config', 'matchengine/config/dfci_config.json'),
-            plugin_dir=kwargs.get('plugin_dir', 'matchengine/plugins/'),
-            match_document_creator_class=kwargs.get('match_document_creator_class', "DFCITrialMatchDocumentCreator"),
             fig_dir=kwargs.get('fig_dir', '/tmp/'),
             protocol_nos=kwargs.get('protocol_nos', None),
             sample_ids=kwargs.get('sample_ids', None),
@@ -268,9 +265,6 @@ class IntegrationTestMatchengine(TestCase):
                          protocol_nos={'10-001'},
                          match_on_closed=True,
                          match_on_deceased=True,
-                         config='matchengine/config/dfci_config.json',
-                         plugin_dir='matchengine/plugins/',
-                         match_document_creator_class='DFCITrialMatchDocumentCreator',
                          num_workers=1) as me:
             me.get_matches_for_trial('10-001')
             assert not me._loop.is_closed()

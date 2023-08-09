@@ -4,48 +4,37 @@ import os
 from unittest import TestCase
 
 from matchengine.internals.engine import MatchEngine
-from matchengine.internals.match_criteria_transform import MatchCriteriaTransform
 from matchengine.internals.match_translator import create_match_tree, get_match_paths, extract_match_clauses_from_trial, \
     translate_match_path
 from matchengine.internals.typing.matchengine_types import MatchClause, MatchCriteria, MatchCriterion
 from matchengine.internals.typing.matchengine_types import MatchClauseData, ParentPath, MatchClauseLevel
 from matchengine.internals.utilities.object_comparison import nested_object_hash
-from matchengine.internals.utilities.utilities import find_plugins
+from matchengine.plugin_stub import QueryTransformers
 
 
 class TestMatchEngine(TestCase):
 
     def setUp(self) -> None:
         """init matchengine without running __init__ since tests will need to instantiate various values individually"""
-        self.me = MatchEngine.__new__(MatchEngine)
+        self.me = MatchEngine(
+            plugin_dir = 'matchengine/tests/plugins',
+            visualize_match_paths = False
+        )
 
-        assert self.me.create_trial_matches({}).__class__ is list
-        self.me.plugin_dir = 'matchengine/tests/plugins'
-        self.me.match_document_creator_class = 'TestTrialMatchDocumentCreator'
-        self.me.visualize_match_paths = False
         with open('matchengine/tests/config.json') as config_file_handle:
             self.config = json.load(config_file_handle)
 
-        self.me.match_criteria_transform = MatchCriteriaTransform(self.config,
-                                                                  [os.path.join(os.path.dirname(__file__), 'data')])
-
-    def test_find_plugins(self):
-        """Verify functions inside external config files are reachable within the Matchengine class"""
-        old_create_trial_matches = self.me.create_trial_matches
-        find_plugins(self.me)
-        assert hasattr(self.me, 'create_trial_matches')
-        assert id(self.me.create_trial_matches) != old_create_trial_matches
-        blank_trial_match = self.me.create_trial_matches({})
-        assert blank_trial_match.__class__ is list and not blank_trial_match
+    def tearDown(self):
+        self.me.__exit__(None, None, None)
 
     def test_query_transform(self):
-        find_plugins(self.me)
 
-        assert hasattr(self.me.match_criteria_transform.transform, 'is_negate')
-        assert getattr(self.me.match_criteria_transform.transform, 'is_negate')('this') == ('this', False)
-        assert getattr(self.me.match_criteria_transform.transform, 'is_negate')('!this') == ('this', True)
-        assert getattr(self.me.match_criteria_transform.transform, 'is_negate')('!') == (str(), True)
-        assert getattr(self.me.match_criteria_transform.transform, 'is_negate')('') == (str(), False)
+        is_negate = QueryTransformers()._is_negate
+
+        assert is_negate('this') == ('this', False)
+        assert is_negate('!this') == ('this', True)
+        assert is_negate('!') == (str(), True)
+        assert is_negate('') == (str(), False)
 
         transform_args = {
             'trial_path': 'test',
@@ -55,36 +44,9 @@ class TestMatchEngine(TestCase):
             'file': 'external_file_mapping_test.json'
         }
 
-        assert hasattr(self.me.match_criteria_transform.query_transformers, 'nomap')
-        query_transform_result = getattr(self.me.match_criteria_transform.query_transformers,
-                                         'nomap')(**transform_args).results[0]
-        nomap_ret, nomap_no_negate = query_transform_result.query, query_transform_result.negate
+        query_transform_result = self.me.match_criteria_transform.query_transformers['nomap'](**transform_args).results[0]
+        nomap_ret, nomap_no_negate = query_transform_result
         assert len(nomap_ret) == 1 and nomap_ret['test'] == 'test' and not nomap_no_negate
-
-        assert hasattr(self.me.match_criteria_transform.query_transformers, 'external_file_mapping')
-        query_transform_result = getattr(self.me.match_criteria_transform.query_transformers,
-                                         'external_file_mapping')(**transform_args).results[0]
-        ext_f_map_ret, ext_f_map_no_negate = query_transform_result.query, query_transform_result.negate
-        assert len(ext_f_map_ret) == 1 and not ext_f_map_no_negate
-        assert 'test' in ext_f_map_ret and '$in' in ext_f_map_ret['test']
-        assert all(map(lambda x: x[0] == x[1],
-                       zip(ext_f_map_ret['test']['$in'],
-                           ['option_1', 'option_2', 'option_3'])))
-        query_transform_result = getattr(
-            self.me.match_criteria_transform.query_transformers,
-            'external_file_mapping')(**dict(transform_args,
-                                            **{'trial_value': '!test2'})).results[0]
-        ext_f_map_ret_single, ext_f_map_no_negate_single = query_transform_result.query, query_transform_result.negate
-        assert len(ext_f_map_ret) == 1 and ext_f_map_no_negate_single
-        assert 'test' in ext_f_map_ret_single and ext_f_map_ret_single['test'].__class__ is str
-        assert ext_f_map_ret_single['test'] == 'option_4'
-
-        assert hasattr(self.me.match_criteria_transform.query_transformers, 'to_upper')
-        query_transform_result = getattr(self.me.match_criteria_transform.query_transformers,
-                                         'to_upper')(**transform_args).results[0]
-        to_upper_ret, to_upper_no_negate = query_transform_result.query, query_transform_result.negate
-        assert len(to_upper_ret) == 1 and not to_upper_no_negate
-        assert 'test' in ext_f_map_ret and to_upper_ret['test'] == 'TEST'
 
     def test_extract_match_clauses_from_trial(self):
         self.me.trials = dict()
@@ -98,7 +60,6 @@ class TestMatchEngine(TestCase):
         assert extracted.match_clause[0]['and'] == match_clause['and']
         assert extracted.parent_path == ('treatment_list', 'step', 0, 'arm', 0, 'match')
         assert extracted.match_clause_level == 'arm'
-        assert extracted.code == 'EXP 3'
 
     def test_create_match_tree(self):
         self.me.trials = dict()
@@ -114,8 +75,6 @@ class TestMatchEngine(TestCase):
         for trial in self.me.trials:
             me_trial = self.me.trials[trial]
             match_tree = create_match_tree(self.me, MatchClauseData(match_clause=me_trial,
-                                                                    internal_id='123',
-                                                                    code='456',
                                                                     parent_path=ParentPath(()),
                                                                     match_clause_level=MatchClauseLevel('arm'),
                                                                     match_clause_additional_attributes={},
@@ -147,8 +106,6 @@ class TestMatchEngine(TestCase):
             filename = os.path.basename(trial)
             me_trial = self.me.trials[trial]
             match_tree = create_match_tree(self.me, MatchClauseData(match_clause=me_trial,
-                                                                    internal_id='123',
-                                                                    code='456',
                                                                     parent_path=ParentPath(()),
                                                                     match_clause_level=MatchClauseLevel('arm'),
                                                                     match_clause_additional_attributes={},
@@ -166,19 +123,18 @@ class TestMatchEngine(TestCase):
 
     def test_translate_match_path(self):
         self.me.trials = dict()
-        find_plugins(self.me)
         match_clause_data = MatchClauseData(match_clause=MatchClause([{}]),
-                                            internal_id='123',
-                                            code='456',
                                             parent_path=ParentPath(()),
                                             match_clause_level=MatchClauseLevel('arm'),
                                             match_clause_additional_attributes={},
                                             protocol_no='12-345',
                                             is_suspended=True)
-        match_paths = translate_match_path(self.me, match_clause_data=match_clause_data,
-                                           match_criterion=MatchCriterion([MatchCriteria({}, 0, 0)]))
-        assert len(match_paths.clinical) == 0
-        assert len(match_paths.extended_attributes) == 0
+        match_paths = translate_match_path(
+            self.me,
+            match_clause_data=match_clause_data,
+            match_criterion=MatchCriterion([MatchCriteria({}, 0, 0)]
+        ))
+        assert match_paths is None
 
     def test_comparable_dict(self):
         assert nested_object_hash({}) == nested_object_hash({})

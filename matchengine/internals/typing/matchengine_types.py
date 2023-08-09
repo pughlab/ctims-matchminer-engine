@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import copy
-import datetime
-from itertools import chain
 from typing import (
     NewType,
     Tuple,
@@ -10,7 +7,6 @@ from typing import (
     List,
     Dict,
     Any,
-    Set
 )
 
 from bson import ObjectId
@@ -155,8 +151,9 @@ class MatchCriterion(object):
 
 class QueryPart(object):
     __slots__ = (
-        "mcq_invalidating", "render", "negate",
-        "_query", "_hash"
+        "render",
+        "negate",
+        "_query",
     )
 
     def __init__(
@@ -164,19 +161,11 @@ class QueryPart(object):
             query: Dict,
             negate: bool,
             render: bool,
-            mcq_invalidating: bool,
-            _hash: str = None
     ):
-        self.mcq_invalidating = mcq_invalidating
         self.render = render
         self.negate = negate
         self._query = query
-        self._hash = _hash
 
-    def hash(self) -> str:
-        if self._hash is None:
-            self._hash = nested_object_hash(self.query)
-        return self._hash
 
     def set_query_attr(
             self,
@@ -186,13 +175,12 @@ class QueryPart(object):
         self._query[key] = value
 
     def __copy__(self):
-        return QueryPart(
+        qp = QueryPart(
             self.query,
             self.negate,
             self.render,
-            self.mcq_invalidating,
-            self._hash
         )
+        return qp
 
     @property
     def query(self):
@@ -201,56 +189,47 @@ class QueryPart(object):
 
 class QueryNode(object):
     __slots__ = (
-        "query_level", "query_depth", "query_parts",
-        "exclusion", "is_finalized", "_hash",
-        "_raw_query", "_raw_query_hash", "sibling_nodes",
-        "node_id", "criterion_ancestor"
+        "trial_key", "_query_parts",
+         "is_finalized", "_hash",
+        "_raw_query", "_raw_query_hash",
+        "node_id", 
+        "_query_parts_by_key", "raw_collection",
+        "raw_join_field", "raw_id_field"
     )
 
     def __init__(
             self,
-            query_level: str,
-            node_id: int,
-            criterion_ancestor: MatchCriteria,
-            query_depth: int,
             query_parts: List[QueryPart],
-            exclusion: Union[None, bool] = None,
-            is_finalized: bool = False,
-            _hash: str = None,
-            _raw_query: Dict = None,
-            _raw_query_hash: str = None
+            raw_collection: str,
+            raw_join_field: str,
+            raw_id_field: str
     ):
 
-        self.node_id = node_id
-        self.criterion_ancestor = criterion_ancestor
-        self.is_finalized = is_finalized
-        self.query_level = query_level
-        self.query_depth = query_depth
-        self.query_parts = query_parts
-        self.exclusion = exclusion
-        self._hash = _hash
-        self._raw_query = _raw_query
-        self._raw_query_hash = _raw_query_hash
-        self.sibling_nodes = None
-
-    def hash(self) -> str:
-        if self._hash is None:
-            self._hash = nested_object_hash({
-                "_tmp1": [query_part.hash()
-                          for query_part in self.query_parts],
-                '_tmp2': self.exclusion
-            })
-        return self._hash
-
-    def add_query_part(self, query_part: QueryPart):
-        self._hash = None
+        self._query_parts = query_parts
+        self.is_finalized = False
+        self.raw_collection = raw_collection
+        self.raw_join_field = raw_join_field
+        self.raw_id_field = raw_id_field
         self._raw_query = None
         self._raw_query_hash = None
-        self.query_parts.append(query_part)
+        self._query_parts_by_key = None
+
+
+    def is_empty(self):
+        return all(
+            (not qp.render)
+            for qp in self._query_parts
+        )
+
+    def add_query_part(self, query_part: QueryPart):
+        if self.is_finalized:
+            raise Exception("Query node is finalized")
+        else:
+            self._query_parts.append(query_part)
 
     def _extract_raw_query(self):
         result = {}
-        for query_part in self.query_parts:
+        for query_part in self._query_parts:
             if query_part.render:
                 for k, v in query_part.query.items():
                     if k in result:
@@ -260,101 +239,79 @@ class QueryNode(object):
 
     def extract_raw_query(self):
         if self.is_finalized:
-            if self._raw_query is None:
-                self._raw_query = self._extract_raw_query()
             return self._raw_query
         else:
             return self._extract_raw_query()
 
     def raw_query_hash(self):
-        if self._raw_query_hash is None:
-            if not self.is_finalized:
-                raise Exception("Query node is not finalized")
-            else:
-                self._raw_query_hash = nested_object_hash(self.extract_raw_query())
+        if not self.is_finalized:
+            raise Exception("Query node is not finalized")
+        elif self._raw_query_hash is None:
+            self._raw_query_hash = nested_object_hash(self._raw_query)
         return self._raw_query_hash
 
     def finalize(self):
         self.is_finalized = True
+        self._raw_query = self._extract_raw_query()
+        self._query_parts_by_key = {}
+        for qp in self._query_parts:
+            for k in qp.query:
+                self._query_parts_by_key[k] = qp
 
     def get_query_part_by_key(self, key: str) -> QueryPart:
-        return next(chain((query_part
-                           for query_part in self.query_parts
-                           if key in query_part.query),
-                          iter([None])))
+        if not self.is_finalized:
+            for qp in self._query_parts:
+                if key in qp.query:
+                    return qp
+        else:
+            return self._query_parts_by_key.get(key)
 
     def get_query_part_value_by_key(self, key: str, default: Any = None) -> Any:
         query_part = self.get_query_part_by_key(key)
         if query_part is not None:
             return query_part.query.get(key, default)
 
-    @property
-    def mcq_invalidating(self):
-        return True if any([query_part.mcq_invalidating for query_part in self.query_parts]) else False
-
-    def __copy__(self):
-        return QueryNode(
-            self.query_level,
-            self.node_id,
-            self.criterion_ancestor,
-            self.query_depth,
-            [query_part.__copy__()
-             for query_part
-             in self.query_parts],
-            self.exclusion,
-            self.is_finalized,
-            self._hash,
-            self._raw_query,
-            self._raw_query_hash
-        )
-
 
 class QueryNodeContainer(object):
     __slots__ = (
-        "query_nodes"
+        "query_nodes",
+        "trial_key",
+        "trial_value",
+        "exclusion",
+        "node_depth"
     )
 
     def __init__(
             self,
-            query_nodes: List[QueryNode]
+            query_nodes: List[QueryNode],
+            trial_key: str,
+            trial_value: dict,
+            node_depth: int,
+            exclusion: bool
     ):
         self.query_nodes = query_nodes
+        self.trial_key = trial_key
+        self.trial_value = trial_value
+        self.exclusion = exclusion
+        self.node_depth = node_depth
 
-    def __copy__(self):
-        return QueryNodeContainer(
-            [query_node.__copy__()
-             for query_node
-             in self.query_nodes]
-        )
 
 
 class MultiCollectionQuery(object):
     __slots__ = (
-        "extended_attributes", "clinical"
+        "query_node_containers"
     )
 
     def __init__(
             self,
-            extended_attributes: List[QueryNodeContainer],
-            clinical: List[QueryNodeContainer]
+            query_node_containers: List[QueryNodeContainer],
     ):
-        self.extended_attributes = extended_attributes
-        self.clinical = clinical
-
-    def __copy__(self):
-        return MultiCollectionQuery(
-            [query_node_container.__copy__()
-             for query_node_container
-             in self.extended_attributes],
-            [query_node_container.__copy__()
-             for query_node_container
-             in self.clinical],
-        )
+        self.query_node_containers = query_node_containers
 
 
 class MatchClauseData(object):
     __slots__ = (
-        "match_clause", "internal_id", "code",
+        "match_clause",
         "is_suspended",
         "parent_path", "match_clause_level", "match_clause_additional_attributes",
         "protocol_no"
@@ -362,79 +319,53 @@ class MatchClauseData(object):
 
     def __init__(self,
                  match_clause: MatchClause,
-                 internal_id: str,
-                 code: str,
                  is_suspended: bool,
                  parent_path: ParentPath,
                  match_clause_level: MatchClauseLevel,
                  match_clause_additional_attributes: dict,
                  protocol_no: str):
-        self.code = code
         self.is_suspended = is_suspended
         self.parent_path = parent_path
         self.match_clause_level = match_clause_level
-        self.internal_id = internal_id
         self.match_clause_additional_attributes = match_clause_additional_attributes
         self.protocol_no = protocol_no
         self.match_clause = match_clause
 
 
-class ExtendedMatchReason(object):
+class MatchReason(object):
     __slots__ = (
-        "query_node", "width", "clinical_id",
-        "reference_id", "clinical_width", "depth",
-        "reason_name"
+        "clinical_id",
+        "depth",
+        "query",
+        "query_kind",
+        "reference_docs",
+        "exclusion",
     )
 
     def __init__(
             self,
-            query_node: QueryNode,
-            width: int,
-            clinical_width: int,
-            clinical_id: ClinicalID,
-            reference_id: Union[GenomicID, None],
+            query_node_container: QueryNodeContainer,
+            exclusion: bool,
+            reference_docs: List[dict],
     ):
-        self.clinical_width = clinical_width
-        self.reference_id = reference_id
-        self.clinical_id = clinical_id
-        self.width = width
-        self.query_node = query_node
-        self.depth = query_node.query_depth
-        self.reason_name = query_node.query_level # e.g. "genomic"
+        # CTML:
+        self.query_kind = query_node_container.trial_key # e.g. "clinical," "genomic"
+        self.query = query_node_container.trial_value # original CTML query
+        self.depth = query_node_container.node_depth
 
-    def extract_raw_query(self):
-        return self.query_node.extract_raw_query()
-
-
-class ClinicalMatchReason(object):
-    __slots__ = (
-        "query_part", "clinical_id", "depth"
-    )
-    reason_name = "clinical"
-    width = 1
-
-    def __init__(
-            self,
-            query_part: QueryPart,
-            clinical_id: ClinicalID,
-            depth: int
-    ):
-        self.clinical_id = clinical_id
-        self.query_part = query_part
-        self.depth = depth
-
-    def extract_raw_query(self):
-        return self.query_part.query
-
-
-MatchReason = NewType("MatchReason", Union[ExtendedMatchReason, ClinicalMatchReason])
+        # Reason information:
+        self.reference_docs = reference_docs
+        self.exclusion = exclusion
 
 
 class TrialMatch(object):
     __slots__ = (
-        "trial", "match_clause_data", "match_criterion",
-        "match_clause_data", "multi_collection_query", "match_reasons",
-        "clinical_id",
+        "trial", "match_clause_data", "match_criterion_hash",
+        "match_clause_data", "match_reasons",
+        "clinical_doc",
+        "is_suspended", "match_clause_path",
+        "match_clause_level", "match_clause_parent",
+        "match_clause", "trial_closed"
     )
 
     def __init__(
@@ -442,30 +373,31 @@ class TrialMatch(object):
             trial: Trial,
             match_clause_data: MatchClauseData,
             match_criterion: MatchCriterion,
-            multi_collection_query: MultiCollectionQuery,
             match_reasons: List[MatchReason],
-            clinical_id: ClinicalID
+            clinical_doc: dict,
+            trial_closed: bool
     ):
+        self.clinical_doc = clinical_doc
         self.match_reasons = match_reasons
-        self.multi_collection_query = multi_collection_query
-        self.match_criterion = match_criterion
-        self.match_clause_data = match_clause_data
+
         self.trial = trial
-        self.clinical_id = clinical_id
+        self.trial_closed = trial_closed
+        self.match_clause_path = match_clause_data.parent_path
+        self.is_suspended = match_clause_data.is_suspended
+        self.match_clause_level = match_clause_data.match_clause_level
+        self.match_clause_parent = match_clause_data.match_clause_additional_attributes
+        self.match_clause = match_clause_data.match_clause
+        self.match_criterion_hash = match_criterion.hash()
+
+
 
 
 class Cache(object):
-    __slots__ = (
-        "docs", "ids", "in_process"
-    )
-    docs: Dict
-    ids: Dict
-    in_process: Dict
-
     def __init__(self):
-        self.docs = dict()
-        self.ids = dict()
-        self.in_process = dict()
+        self.query_results = {}
+        self.query_tasks = {}
+        self.doc_results = {}
+        self.doc_tasks = {}
 
 
 class Secrets(object):
@@ -507,28 +439,20 @@ class QueryTransformerResult(object):
     __slots__ = (
         "results"
     )
-    results: List[QueryPart]
+    results: List[Tuple[Dict, bool]]
 
     def __init__(
             self,
             query_clause: Dict = None,
-            negate: bool = None,
-            render: bool = True,
-            mcq_invalidating: bool = False
+            negate: bool = False,
     ):
-        self.results = list()
+        self.results = []
         if query_clause is not None:
-            if negate is not None:
-                self.results.append(QueryPart(query_clause, negate, render, mcq_invalidating))
-            else:
-                raise Exception("If adding query result directly to results container, "
-                                "both Negate and Query must be specified")
+            self.results.append((query_clause, bool(negate)))
 
     def add_result(
             self,
             query_clause: Dict,
             negate: bool,
-            render: bool = True,
-            mcq_invalidating: bool = False
     ):
-        self.results.append(QueryPart(query_clause, negate, render, mcq_invalidating))
+        self.results.append((query_clause, bool(negate)))

@@ -105,7 +105,7 @@ async def run_query_task(matchengine: MatchEngine, task, worker_id):
         matchengine.task_q.task_done()
         return
     try:
-        results, docs = await matchengine.run_query(task.query, clinical_ids)
+        results = await matchengine.run_query(task.query, clinical_ids)
     except Exception as e:
         results = dict()
         log.error(f"ERROR: Worker: {worker_id}, error: {e}")
@@ -126,18 +126,21 @@ async def run_query_task(matchengine: MatchEngine, task, worker_id):
             raise e
 
     try:
-        matchengine.cache.docs = docs
+        is_closed = not matchengine._trial_is_open(task.trial)
         trial_match_dict = matchengine.matches[task.trial[trial_identifier]]
+        tmdc = matchengine.trial_match_document_creator
         for clinical_id, sample_reasons in results.items():
-            trial_match = TrialMatch(task.trial,
-                                            task.match_clause_data,
-                                            task.match_path,
-                                            task.query,
-                                            sample_reasons,
-                                            clinical_id)
+            trial_match = TrialMatch(
+                trial=task.trial,
+                match_clause_data=task.match_clause_data,
+                match_criterion=task.match_path,
+                match_reasons=sample_reasons,
+                clinical_doc=matchengine.cache.doc_results[('clinical', '_id', clinical_id)],
+                trial_closed=is_closed
+            )
 
             # generate trial match documents using plugin
-            match_documents = matchengine.create_trial_matches(trial_match)
+            match_documents = tmdc.create_trial_matches(trial_match)
 
             sample_id = matchengine.clinical_mapping[clinical_id]
             sample_match_list = trial_match_dict.setdefault(sample_id, [])

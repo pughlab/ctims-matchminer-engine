@@ -60,12 +60,12 @@ def load_trials(db_rw, args: Namespace):
     trials = items_from_path(Path(args.trial))
     for trial in trials:
         if 'protocol_no' not in trial:
-            log.warn("Refusing to add trial without protocol_no")
+            log.warning("Refusing to add trial without protocol_no")
             continue
         trial_del = db_rw['trial'].delete_many({'protocol_no': trial['protocol_no']})
         log.info(f"Loading trial with protocol_no: {trial.get('protocol_no')}")
         if trial_del.deleted_count:
-            log.warn("Deleted existing duplicate trial")
+            log.warning("Deleted existing duplicate trial")
         db_rw.trial.insert_one(trial)
 
 def items_from_path(root_path):
@@ -128,7 +128,7 @@ def load_clinical(db_rw, args):
 
     for c in clinicals:
         if 'SAMPLE_ID' not in c:
-            log.warn("Refusing to add clinical document without SAMPLE_ID")
+            log.warning("Refusing to add clinical document without SAMPLE_ID")
             continue
 
         clin_del = db_rw['clinical'].delete_many({'SAMPLE_ID': c['SAMPLE_ID']})
@@ -153,7 +153,7 @@ def load_genomic(db_rw, args):
             bad_genomics.append(g)
 
     if bad_genomics:
-        log.warn(f"Ignoring {len(bad_genomics)} genomic documents with no corresponding clinical documents")
+        log.warning(f"Ignoring {len(bad_genomics)} genomic documents with no corresponding clinical documents")
     
     log.info(f"Loading {len(ok_genomics)} genomic documents")
     for c in ok_genomics:

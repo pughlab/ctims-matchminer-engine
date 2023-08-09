@@ -29,15 +29,12 @@ def run_match(run_args):
         num_workers=run_args.workers[0],
         config=run_args.config_path,
         db_name=run_args.db_name,
-        match_document_creator_class=run_args.match_document_creator_class,
-        db_secrets_class=run_args.db_secrets_class,
         ignore_run_log=run_args.ignore_run_log,
         skip_run_log_entry=run_args.skip_run_log_entry,
         trial_match_collection=run_args.trial_match_collection,
         drop=run_args.drop or run_args.drop_and_exit,
         drop_accept=run_args.confirm_drop,
         exit_after_drop=run_args.drop_and_exit,
-        resource_dirs=run_args.extra_resource_dirs,
         age_comparison_date=age_comparison_date,
     ) as me:
         me.get_matches_for_all_trials()
@@ -187,38 +184,15 @@ def run_cli():
         "--config",
         dest="config_path",
         metavar='PATH',
-        default=os.path.join(base_dir, "config/dfci_config.json"),
+        default=os.path.join(base_dir, "defaults", "config.json"),
         help=("Path to the config file; defaults to %(default)a"),
     )
     group.add_argument(
         "--plugins",
         dest="plugin_dir",
         metavar="DIR",
-        default=os.path.join(base_dir, "plugins"),
+        default=os.path.join(base_dir, "defaults", "plugins"),
         help="Location of plugin directory; defaults to %(default)a",
-    )
-    group.add_argument(
-        "--resources",
-        nargs="*",
-        dest="extra_resource_dirs",
-        type=str,
-        metavar='DIR',
-        default=None,
-        help="Extra directories for resources used by mappings",
-    )
-    group.add_argument(
-        "--match-creator",
-        dest="match_document_creator_class",
-        default="DFCITrialMatchDocumentCreator",
-        metavar='C',
-        help="Name of class for creating match documents. Should be located in the plugin directory",
-    )
-    group.add_argument(
-        "--db-secrets-class",
-        dest="db_secrets_class",
-        metavar='C',
-        default="DFCIDBSecrets",
-        help="Name of class for obtaining the DB Secrets. Should be located in the plugin directory",
     )
     group.add_argument(
         '--db',

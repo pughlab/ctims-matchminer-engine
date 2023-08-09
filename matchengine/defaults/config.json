@@ -9,6 +9,8 @@
   "ctml_collection_mappings": {
     "clinical": {
       "query_collection": "clinical",
+      "break_queries_into_parts": true,
+      "join_order": 10,
       "join_field": "_id",
       "id_field": "_id",
       "trial_key_mappings": {
@@ -18,8 +20,7 @@
         },
         "ONCOTREE_PRIMARY_DIAGNOSIS": {
           "sample_key": "ONCOTREE_PRIMARY_DIAGNOSIS_NAME",
-          "sample_value": "external_file_mapping",
-          "file": "oncotree_mapping.json"
+          "sample_value": "oncotree_map"
         },
         "GENDER": {
           "sample_key": "GENDER",
@@ -47,6 +48,8 @@
       "query_collection": "genomic",
       "join_field": "CLINICAL_ID",
       "id_field": "_id",
+      "break_queries_into_parts": false,
+      "join_order": 20,
       "trial_key_mappings": {
         "HUGO_SYMBOL": {
           "sample_key": "HARMONIZED_HUGO_SYMBOL",
@@ -112,17 +115,6 @@
           "sample_value": "nomap"
         }
       }
-    },
-    "prior_treatments": {
-      "query_collection": "prior_treatments",
-      "join_field": "CLINICAL_ID",
-      "id_field": "_id",
-      "trial_key_mappings": {
-        "DRUG": {
-          "sample_key": "DRUG",
-          "sample_value": "nomap"
-        }
-      }
     }
   },
   "projections": {
@@ -162,9 +154,6 @@
       "HARMONIZED_RIGHT_PARTNER_GENE",
       "STRUCTURAL_VARIANT_TYPE"
     ],
-    "prior_treatments": [
-      "DRUG"
-    ],
     "clinical": [
       "REPORT_DATE",
       "GENDER",
@@ -182,18 +171,13 @@
       "_summary"
     ]
   },
-  "extra_initial_lookup_fields": {
-    "clinical": [
-      [
-        "REPORT_DATE",
-        "date"
-      ]
+  "initial_lookup": {
+    "collection": "clinical",
+    "extra_fields": [
+      "REPORT_DATE"
     ]
   },
   "indices": {
-    "clinical_run_history_trial_match": [
-      "clinical_id"
-    ],
     "genomic": [
       "SAMPLE_ID",
       "CLINICAL_ID",
