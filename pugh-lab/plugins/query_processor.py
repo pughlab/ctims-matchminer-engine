@@ -6,7 +6,7 @@ import re
 from typing import Union, List, Tuple, Dict, NoReturn
 
 
-class CustomQueryProcessor(QueryProcessor):
+class PughLabQueryProcessor(QueryProcessor):
     def transform(self, query_container: QueryNodeContainer):
         for query_node in query_container.query_nodes:
             self._query_node_transform(query_node)

@@ -7,7 +7,7 @@ from matchengine.plugin_stub import ClinicalFilter
 from matchengine.internals.typing.matchengine_types import QueryNode
 
 
-class CustomClinicalFilter(ClinicalFilter):
+class PughLabClinicalFilter(ClinicalFilter):
     def should_match(self, doc: dict):
         return True
 

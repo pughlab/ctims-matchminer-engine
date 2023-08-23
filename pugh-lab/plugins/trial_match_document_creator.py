@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from typing import Dict
 
 
-class CustomTrialMatchDocumentCreator(TrialMatchDocumentCreator):
+class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
     def create_trial_matches(self, trial_match: TrialMatch) -> list:
         """
         Create trial match documents based on a TrialMatch, the result of matching a particular

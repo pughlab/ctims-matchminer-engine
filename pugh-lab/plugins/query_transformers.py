@@ -7,7 +7,7 @@ from matchengine.internals.typing.matchengine_types import QueryTransformerResul
 from matchengine.plugin_stub import QueryTransformers
 from pathlib import Path
 
-class CustomQueryTransformers(QueryTransformers):
+class PughLabQueryTransformers(QueryTransformers):
     def __init__(self):
         super().__init__()
         try:
