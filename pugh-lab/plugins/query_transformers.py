@@ -40,6 +40,9 @@ class PughLabQueryTransformers(QueryTransformers):
     def oncotree_case_insensitive_map(self, sample_key, trial_value, **kwargs):
         trial_value, negate = self._is_negate(trial_value)
         values = self._oncotree.get(trial_value, trial_value)
+        if negate:
+            values.append("NA")
+
         regex = "^(" + "|".join([re.escape(v) for v in values]) + ")$"
 
         return QueryTransformerResult({sample_key: {"$regex": regex, "$options": "i"}}, negate)
