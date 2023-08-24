@@ -80,10 +80,16 @@ async def run_query_node(
         projection = {id_field: 1, join_field: 1}
         docs = await matchengine.async_db_ro[collection].find(new_query, projection).to_list(None)
 
+        # In the old code, we used sets for this, which resulted in the id_cache requiring an absurd
+        # amount of memory, since even empty sets have a large footprint. With tuples, this is
+        # greatly reduced.
         for cid in need_new:
-            id_cache[cid] = set()
+            id_cache[cid] = ()
         for doc in docs:
-            id_cache[doc[join_field]].add(doc[id_field])
+            key, new_val = doc[join_field], doc[id_field]
+            old_val = id_cache[key]
+            if new_val not in old_val:
+                id_cache[key] = old_val + (new_val, )
 
         group_future.set_result(None)
 

@@ -206,22 +206,6 @@ class MatchEngine(object):
         self._async_db_rw = MongoDBConnection(read_only=False, db=db_name, loop=self._loop, secrets=db_secrets)
         self.async_db_rw = self._async_db_rw.__enter__()
 
-        # create a task queue for async tasks
-        self._task_q = asyncio.queues.Queue(loop=self._loop)
-
-
-        # create "workers" which handle async tasks from the task_q
-        # general pattern is to put a series of tasks in the queue, then await task_q.join()
-        # and the workers will complete the tasks.
-        # this is done instead of using asyncio.gather as the event loop will hang if >100s of coroutines/futures
-        # are placed at once, especially if they're I/O related. The epoll (linux) and kqueue (macOS/BSD)
-        # selectors used in the event loop implementation will grind to a halt with too many open sockets, and
-        # as we can have 1000's of requests for a single trial, we need to limit the effective I/O concurrency.
-        # In effect, the effective concurrency is the number of workers.
-        self._workers = {
-            worker_id: self._loop.create_task(self._queue_worker(worker_id))
-            for worker_id in range(0, self.num_workers)
-        }
 
         if delete_run_logs:
             log.info("deleting run logs")
@@ -266,7 +250,6 @@ class MatchEngine(object):
         self.clinical_deceased = self.get_clinical_deceased()
         self.clinical_ids = set(self.clinical_mapping.keys())
 
-        log.debug("Checking indices")
         self._loop.run_until_complete(self._async_init())
 
     def create_output_csv(self):
@@ -299,6 +282,25 @@ class MatchEngine(object):
         Instantiate asynchronous db connections and workers.
         Create a task que which holds all matching and update tasks for processing via workers.
         """
+
+        # create a task queue for async tasks
+        self._task_q = asyncio.queues.Queue()
+
+
+        # create "workers" which handle async tasks from the task_q
+        # general pattern is to put a series of tasks in the queue, then await task_q.join()
+        # and the workers will complete the tasks.
+        # this is done instead of using asyncio.gather as the event loop will hang if >100s of coroutines/futures
+        # are placed at once, especially if they're I/O related. The epoll (linux) and kqueue (macOS/BSD)
+        # selectors used in the event loop implementation will grind to a halt with too many open sockets, and
+        # as we can have 1000's of requests for a single trial, we need to limit the effective I/O concurrency.
+        # In effect, the effective concurrency is the number of workers.
+        self._workers = {
+            worker_id: self._loop.create_task(self._queue_worker(worker_id))
+            for worker_id in range(0, self.num_workers)
+        }
+
+        log.debug("Checking indices")
         self._task_q.put_nowait(CheckIndicesTask())
         await self._task_q.join()
 
