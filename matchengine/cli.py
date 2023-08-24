@@ -99,6 +99,7 @@ def run_cli():
         ),
     )
     subp_p.add_argument('--log-level', **log_level_arg)
+    subp_p.add_argument('--drop', dest='drop', action='store_true', help='Drop existing data')
     subp_p.add_argument(
         '-t',
         '--trial',
