@@ -39,26 +39,32 @@ class IntegrationTestMatchengineLoading(TestCase):
 
     def test__load_trial_single_json(self):
         self._reset(do_reset_trials=True)
-        args = Namespace(clinical=None,
-                         genomic=None,
-                         db_name='integration_load',
-                         plugin_dir='plugins',
-                         trial_format='json',
-                         trial='matchengine/tests/data/trials/11-111.json',
-                         upsert_fields='')
+        args = Namespace(
+            drop=False,
+            clinical=None,
+            genomic=None,
+            db_name='integration_load',
+            plugin_dir='plugins',
+            trial_format='json',
+            trial='matchengine/tests/data/trials/11-111.json',
+            upsert_fields='',
+        )
         load(args)
         assert len(list(self.db_ro.trial.find({}))) == 1
 
     def test__load_trials_single_json_multiple_trials(self):
         """mongoexport by default creates 'json' objects separated by new lines."""
         self._reset(do_reset_trials=True)
-        args = Namespace(clinical=None,
-                         genomic=None,
-                         db_name='integration_load',
-                         plugin_dir='plugins',
-                         trial_format='json',
-                         trial='matchengine/tests/data/trials/two_trials_one_doc.json',
-                         upsert_fields='')
+        args = Namespace(
+            drop=False,
+            clinical=None,
+            genomic=None,
+            db_name='integration_load',
+            plugin_dir='plugins',
+            trial_format='json',
+            trial='matchengine/tests/data/trials/two_trials_one_doc.json',
+            upsert_fields='',
+        )
         load(args)
         assert len(list(self.db_ro.trial.find({}))) == 2
 
@@ -66,84 +72,105 @@ class IntegrationTestMatchengineLoading(TestCase):
         """mongoexport also allows exporting of trials as an array of json objects."""
         self._reset(do_reset_trials=True)
         args = Namespace(
+            drop=False,
             clinical=None,
             genomic=None,
             db_name='integration_load',
             plugin_dir='plugins',
             trial_format='json',
             trial='matchengine/tests/data/trials/trials_json_array.json',
-            upsert_fields='')
+            upsert_fields='',
+        )
         load(args)
         assert len(list(self.db_ro.trial.find({}))) == 2
 
     def test__load_trials_json_dir(self):
         self._reset(do_reset_trials=True)
-        args = Namespace(clinical=None,
-                         genomic=None,
-                         db_name='integration_load',
-                         plugin_dir='plugins',
-                         trial_format='json',
-                         trial='matchengine/tests/data/integration_trials/',
-                         upsert_fields='')
+        args = Namespace(
+            drop=False,
+            clinical=None,
+            genomic=None,
+            db_name='integration_load',
+            plugin_dir='plugins',
+            trial_format='json',
+            trial='matchengine/tests/data/integration_trials/',
+            upsert_fields='',
+        )
         load(args)
         assert len(list(self.db_ro.trial.find({}))) > 10
 
     def test__load_trial_single_yaml(self):
         self._reset(do_reset_trials=True)
-        args = Namespace(clinical=None,
-                         genomic=None, db_name='integration_load',
-                         plugin_dir='plugins',
-                         trial_format='yml',
-                         trial='matchengine/tests/data/yaml/11-111.yaml',
-                         upsert_fields='')
+        args = Namespace(
+            drop=False,
+            clinical=None,
+            genomic=None,
+            db_name='integration_load',
+            plugin_dir='plugins',
+            trial_format='yml',
+            trial='matchengine/tests/data/yaml/11-111.yaml',
+            upsert_fields='',
+        )
         load(args)
         assert len(list(self.db_ro.trial.find({}))) == 1
 
     def test__load_trial_yaml_dir(self):
         self._reset(do_reset_trials=True)
-        args = Namespace(clinical=None,
-                         genomic=None,
-                         db_name='integration_load',
-                         plugin_dir='plugins',
-                         trial_format='yml',
-                         trial='matchengine/tests/data/yaml/',
-                         upsert_fields='')
+        args = Namespace(
+            drop=False,
+            clinical=None,
+            genomic=None,
+            db_name='integration_load',
+            plugin_dir='plugins',
+            trial_format='yml',
+            trial='matchengine/tests/data/yaml/',
+            upsert_fields='',
+        )
         load(args)
         assert len(list(self.db_ro.trial.find({}))) == 2
 
     def test__load_clinical_single_json_file(self):
         self._reset(do_reset_patient=True)
-        args = Namespace(genomic=None,
-                         trial=None,
-                         db_name='integration_load',
-                         plugin_dir='plugins',
-                         patient_format='json',
-                         clinical='matchengine/tests/data/clinical_json/test_patient_1.json',
-                         upsert_fields='')
+        args = Namespace(
+            drop=False,
+            genomic=None,
+            trial=None,
+            db_name='integration_load',
+            plugin_dir='plugins',
+            patient_format='json',
+            clinical='matchengine/tests/data/clinical_json/test_patient_1.json',
+            upsert_fields='',
+        )
         load(args)
         assert len(list(self.db_ro.clinical.find({}))) == 1
 
     def test__load_clinical_json_dir(self):
         self._reset(do_reset_patient=True)
-        args = Namespace(genomic=None,
-                         trial=None,
-                         db_name='integration_load',
-                         plugin_dir='plugins',
-                         patient_format='json',
-                         clinical='matchengine/tests/data/clinical_json/',
-                         upsert_fields='')
+        args = Namespace(
+            drop=False,
+            genomic=None,
+            trial=None,
+            db_name='integration_load',
+            plugin_dir='plugins',
+            patient_format='json',
+            clinical='matchengine/tests/data/clinical_json/',
+            upsert_fields='',
+        )
         load(args)
         assert len(list(self.db_ro.clinical.find({}))) == 2
 
     def test__load_clinical_single_csv_file(self):
         self._reset(do_reset_patient=True)
-        args = Namespace(genomic=None,
-                         trial=None,
-                         db_name='integration_load',
-                         plugin_dir='plugins',
-                         patient_format='csv',
-                         clinical='matchengine/tests/data/clinical_csv/test_patients.csv',
-                         upsert_fields='')
+        args = Namespace(
+            drop=False,
+            genomic=None,
+            trial=None,
+            db_name='integration_load',
+            plugin_dir='plugins',
+            patient_format='csv',
+            clinical='matchengine/tests/data/clinical_csv/test_patients.csv',
+            upsert_fields='',
+        )
         load(args)
         assert len(list(self.db_ro.clinical.find({}))) == 2
 
@@ -151,23 +178,29 @@ class IntegrationTestMatchengineLoading(TestCase):
         self._reset(do_reset_patient=True)
 
         # load clinical doc
-        args = Namespace(genomic=None,
-                         trial=None,
-                         db_name='integration_load',
-                         plugin_dir='plugins',
-                         patient_format='json',
-                         clinical='matchengine/tests/data/clinical_json/test_patient_1.json',
-                         upsert_fields='')
+        args = Namespace(
+            drop=False,
+            genomic=None,
+            trial=None,
+            db_name='integration_load',
+            plugin_dir='plugins',
+            patient_format='json',
+            clinical='matchengine/tests/data/clinical_json/test_patient_1.json',
+            upsert_fields='',
+        )
         load(args)
 
         # load genomic doc
-        args = Namespace(genomic='matchengine/tests/data/genomic_json/test_patient_1.json',
-                         trial=None,
-                         db_name='integration_load',
-                         plugin_dir='plugins',
-                         patient_format='json',
-                         clinical=None,
-                         upsert_fields='')
+        args = Namespace(
+            drop=False,
+            genomic='matchengine/tests/data/genomic_json/test_patient_1.json',
+            trial=None,
+            db_name='integration_load',
+            plugin_dir='plugins',
+            patient_format='json',
+            clinical=None,
+            upsert_fields='',
+        )
         load(args)
         clinical = list(self.db_ro.clinical.find({}))
         genomic = list(self.db_ro.genomic.find({}))
@@ -178,23 +211,29 @@ class IntegrationTestMatchengineLoading(TestCase):
     def test__load_genomic_json_dir(self):
         self._reset(do_reset_patient=True)
         # load clinical docs
-        args = Namespace(genomic=None,
-                         trial=None,
-                         db_name='integration_load',
-                         plugin_dir='plugins',
-                         patient_format='json',
-                         clinical='matchengine/tests/data/clinical_json/',
-                         upsert_fields='')
+        args = Namespace(
+            drop=False,
+            genomic=None,
+            trial=None,
+            db_name='integration_load',
+            plugin_dir='plugins',
+            patient_format='json',
+            clinical='matchengine/tests/data/clinical_json/',
+            upsert_fields='',
+        )
         load(args)
 
         # load genomic docs
-        args = Namespace(genomic='matchengine/tests/data/genomic_json/',
-                         trial=None,
-                         db_name='integration_load',
-                         plugin_dir='plugins',
-                         patient_format='json',
-                         clinical=None,
-                         upsert_fields='')
+        args = Namespace(
+            drop=False,
+            genomic='matchengine/tests/data/genomic_json/',
+            trial=None,
+            db_name='integration_load',
+            plugin_dir='plugins',
+            patient_format='json',
+            clinical=None,
+            upsert_fields='',
+        )
         load(args)
         clinical = list(self.db_ro.clinical.find({}))
         genomic = list(self.db_ro.genomic.find({}))
@@ -207,23 +246,29 @@ class IntegrationTestMatchengineLoading(TestCase):
         self._reset(do_reset_patient=True)
 
         # load clinical doc
-        args = Namespace(genomic=None,
-                         trial=None,
-                         db_name='integration_load',
-                         plugin_dir='plugins',
-                         patient_format='json',
-                         clinical='matchengine/tests/data/clinical_json/',
-                         upsert_fields='')
+        args = Namespace(
+            drop=False,
+            genomic=None,
+            trial=None,
+            db_name='integration_load',
+            plugin_dir='plugins',
+            patient_format='json',
+            clinical='matchengine/tests/data/clinical_json/',
+            upsert_fields='',
+        )
         load(args)
 
         # load genomic doc
-        args = Namespace(genomic='matchengine/tests/data/genomic_csv/test_patients.csv',
-                         trial=None,
-                         db_name='integration_load',
-                         plugin_dir='plugins',
-                         patient_format='csv',
-                         clinical=None,
-                         upsert_fields='')
+        args = Namespace(
+            drop=False,
+            genomic='matchengine/tests/data/genomic_csv/test_patients.csv',
+            trial=None,
+            db_name='integration_load',
+            plugin_dir='plugins',
+            patient_format='csv',
+            clinical=None,
+            upsert_fields='',
+        )
         load(args)
         clinical = list(self.db_ro.clinical.find({}))
         genomic = list(self.db_ro.genomic.find({}))

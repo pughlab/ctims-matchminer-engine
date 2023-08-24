@@ -51,10 +51,10 @@ def load(args: Namespace):
         log.info('Done.')
 
 
-
 #################
 # trial loading
 #################
+
 
 def load_trials(db_rw, args: Namespace):
     trials = items_from_path(Path(args.trial))
@@ -68,24 +68,19 @@ def load_trials(db_rw, args: Namespace):
             log.warning("Deleted existing duplicate trial")
         db_rw.trial.insert_one(trial)
 
+
 def items_from_path(root_path):
     source_paths = []
     if not root_path.exists():
         raise ValueError(f"path does not exist: {root_path}")
     if root_path.is_dir():
         source_paths = [
-            path
-            for glob in [ '**/*.yml', '**/*.yaml', '**/*.json', '**/*.csv' ]
-            for path in root_path.glob(glob)
+            path for glob in ['**/*.yml', '**/*.yaml', '**/*.json', '**/*.csv'] for path in root_path.glob(glob)
         ]
     else:
         source_paths = [root_path]
 
-    return [
-        item
-        for path in source_paths
-        for item in parse_data(path)
-    ]
+    return [item for path in source_paths for item in parse_data(path)]
 
 
 def parse_data(path):
@@ -97,6 +92,13 @@ def parse_data(path):
                     yield subdoc
             else:
                 yield doc
+    elif path.suffix in {'.ejson'}:  # MongoDB extended JSON
+        doc = json_util.loads(contents)
+        if isinstance(doc, list):
+            for subdoc in doc:
+                yield subdoc
+        else:
+            yield doc
     elif path.suffix in {'.json'}:
         while True:
             contents = contents.strip()
@@ -117,14 +119,20 @@ def parse_data(path):
     else:
         raise ValueError("invalid path")
 
+
 def load_clinical(db_rw, args):
+    if args.drop:
+        r = db_rw['clinical'].delete_many({})
+        log.info(f"Dropped {r.deleted_count} clinical documents")
     clinicals = items_from_path(Path(args.clinical))
 
     for c in clinicals:
-        if ('BIRTH_DATE' in c):
+        if isinstance(c.get('BIRTH_DATE'), str):
             fixed_date = datetime.strptime(c['BIRTH_DATE'], "%Y-%m-%d")
             c['BIRTH_DATE'] = fixed_date
             c['BIRTH_DATE_INT'] = int(fixed_date.strftime('%Y%m%d'))
+
+    log.info(f"Loading {len(clinicals)} clinical documents")
 
     for c in clinicals:
         if 'SAMPLE_ID' not in c:
@@ -133,20 +141,24 @@ def load_clinical(db_rw, args):
 
         clin_del = db_rw['clinical'].delete_many({'SAMPLE_ID': c['SAMPLE_ID']})
         gen_del = db_rw['genomic'].delete_many({'SAMPLE_ID': c['SAMPLE_ID']})
-        log.info(f"Loading clinical with SAMPLE_ID: {c.get('SAMPLE_ID')}")
         if clin_del.deleted_count or gen_del.deleted_count:
-            log.info(f"Removed {clin_del.deleted_count} duplicate clinical documents and {gen_del.deleted_count} genomic documents")
+            log.info(
+                f"Removed {clin_del.deleted_count} duplicate clinical documents and {gen_del.deleted_count} genomic documents"
+            )
         db_rw['clinical'].insert_one(c)
 
+
 def load_genomic(db_rw, args):
+    if args.drop:
+        r = db_rw['genomic'].delete_many({})
+        log.info(f"Dropped {r.deleted_count} genomic documents")
     genomics = items_from_path(Path(args.genomic))
-    clinical_dict = {
-        item['SAMPLE_ID']: item['_id']
-        for item in db_rw['clinical'].find({}, {'_id': 1, 'SAMPLE_ID': 1})
-    }
+    clinical_dict = {item['SAMPLE_ID']: item['_id'] for item in db_rw['clinical'].find({}, {'_id': 1, 'SAMPLE_ID': 1})}
     ok_genomics, bad_genomics = [], []
     for g in genomics:
-        if ('SAMPLE_ID' in g) and (g['SAMPLE_ID'] in clinical_dict):
+        if g.get('CLINICAL_ID'):
+            ok_genomics.append(g)
+        elif g.get('SAMPLE_ID') in clinical_dict:
             g['CLINICAL_ID'] = clinical_dict[g['SAMPLE_ID']]
             ok_genomics.append(g)
         else:
@@ -154,11 +166,7 @@ def load_genomic(db_rw, args):
 
     if bad_genomics:
         log.warning(f"Ignoring {len(bad_genomics)} genomic documents with no corresponding clinical documents")
-    
+
     log.info(f"Loading {len(ok_genomics)} genomic documents")
     for c in ok_genomics:
         db_rw['genomic'].insert_one(c)
-
-
-
-
