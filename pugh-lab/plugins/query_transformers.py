@@ -43,9 +43,19 @@ class PughLabQueryTransformers(QueryTransformers):
         if negate:
             values.append("NA")
 
-        regex = "^(" + "|".join([re.escape(v) for v in values]) + ")$"
+        # transform to a series of 'or' clauses to avoid too long of regex string
+        new_values = [
+            {sample_key: {'$regex': f'^{old_value}$', '$options': 'i'}} for old_value in values
+        ]
 
-        return QueryTransformerResult({sample_key: {"$regex": regex, "$options": "i"}}, negate)
+        # regex = "^(" + "|".join([re.escape(v) for v in values]) + ")$"
+        # return QueryTransformerResult({sample_key: {"$regex": regex, "$options": "i"}}, negate)
+
+        return QueryTransformerResult({'$or': new_values}, negate)
+
+    def oncotree_map(self, sample_key, trial_value, **kwargs):
+        trial_value, negate = self._is_negate(trial_value)
+        return QueryTransformerResult({sample_key: {"$in": self._oncotree.get(trial_value, trial_value)}}, negate)
 
     def cnv_map(self, sample_key, trial_value, **kwargs):
         # Heterozygous deletion,
