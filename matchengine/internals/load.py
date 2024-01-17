@@ -5,6 +5,7 @@ import logging
 import os
 from argparse import Namespace
 from contextlib import ExitStack
+from typing import List
 
 import yaml
 import io
@@ -33,9 +34,22 @@ def load(args: Namespace):
     with ExitStack() as stack:
         db_rw = stack.enter_context(MongoDBConnection(read_only=False, db=args.db_name, async_init=False))
         log.info(f"Database: {args.db_name}")
+        log.info(f"args {args}")
+        log.info(f" hasAttribute {hasattr(args, 'from_api')}")
+        log.info(f"args.from_api {args.from_api}")
         if args.trial:
             log.info('Adding trial(s) to mongo...')
-            load_trials(db_rw, args)
+            if hasattr(args, 'from_api'):
+                log.info('has attribute from_api')
+                if args.from_api:
+                    log.info('from_api is true')
+                    load_trials_from_api(db_rw, args.trial)
+                else:
+                    log.info('from_api is false')
+                    load_trials(db_rw, args)
+            else:
+                log.info('does not have attribute from_api')
+                load_trials(db_rw, args)
 
         if args.clinical:
             log.info('Adding clinical data to mongo...')
@@ -59,6 +73,17 @@ def load(args: Namespace):
 def load_trials(db_rw, args: Namespace):
     trials = items_from_path(Path(args.trial))
     for trial in trials:
+        if 'protocol_no' not in trial:
+            log.warning("Refusing to add trial without protocol_no")
+            continue
+        trial_del = db_rw['trial'].delete_many({'protocol_no': trial['protocol_no']})
+        log.info(f"Loading trial with protocol_no: {trial.get('protocol_no')}")
+        if trial_del.deleted_count:
+            log.warning("Deleted existing duplicate trial")
+        db_rw.trial.insert_one(trial)
+
+def load_trials_from_api(db_rw, json_list: List[dict]):
+    for trial in json_list:
         if 'protocol_no' not in trial:
             log.warning("Refusing to add trial without protocol_no")
             continue

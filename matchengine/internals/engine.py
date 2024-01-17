@@ -121,6 +121,7 @@ class MatchEngine(object):
             fig_dir: str = None,
             db_name: str = None,
             ignore_run_log: bool = False,
+            ignore_report_date: bool = False,
             skip_run_log_entry: bool = False,
             trial_match_collection: str = "trial_match",
             drop: bool = False,
@@ -144,6 +145,7 @@ class MatchEngine(object):
         self.run_log_entries = dict()
         self.ignore_run_log = ignore_run_log
         self.skip_run_log_entry = skip_run_log_entry
+        self.ignore_report_date = ignore_report_date
         self._protocol_nos_param = list(protocol_nos) if protocol_nos is not None else protocol_nos
         self._sample_ids_param = list(sample_ids) if sample_ids is not None else sample_ids
         self.chunk_size = chunk_size
@@ -599,7 +601,8 @@ class MatchEngine(object):
                 'match_on_deceased': self.match_on_deceased,
                 'match_on_closed': self.match_on_closed,
                 'workers': self.num_workers,
-                'ignore_run_log': self.ignore_run_log
+                'ignore_run_log': self.ignore_run_log,
+                'ignore_report_date': self.ignore_report_date
             },
             '_created': datetime.datetime.now(),
             'start_time_utc': self.start_time_utc,
