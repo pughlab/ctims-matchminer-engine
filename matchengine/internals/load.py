@@ -34,21 +34,13 @@ def load(args: Namespace):
     with ExitStack() as stack:
         db_rw = stack.enter_context(MongoDBConnection(read_only=False, db=args.db_name, async_init=False))
         log.info(f"Database: {args.db_name}")
-        log.info(f"args {args}")
-        log.info(f" hasAttribute {hasattr(args, 'from_api')}")
-        log.info(f"args.from_api {args.from_api}")
         if args.trial:
-            log.info('Adding trial(s) to mongo...')
             if hasattr(args, 'from_api'):
-                log.info('has attribute from_api')
                 if args.from_api:
-                    log.info('from_api is true')
                     load_trials_from_api(db_rw, args.trial)
                 else:
-                    log.info('from_api is false')
                     load_trials(db_rw, args)
             else:
-                log.info('does not have attribute from_api')
                 load_trials(db_rw, args)
 
         if args.clinical:
