@@ -127,7 +127,7 @@ class PughLabQueryTransformers(QueryTransformers):
             'MMR-Proficient': 'Proficient (MMR-P / MSS)',
             'MMR-Deficient': 'Deficient (MMR-D / MSI-H)',
             'MSI-H': 'High',
-            'MSI-L': 'Proficient (MMR-P / MSS)',
+            'MSI-L': 'Indeterminate',
             'MSS': 'Stable'
         }
         trial_value, negate = self._is_negate(trial_value)
