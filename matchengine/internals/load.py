@@ -64,15 +64,17 @@ def load(args: Namespace):
 
 def load_trials(db_rw, args: Namespace):
     trials = items_from_path(Path(args.trial))
-    for trial in trials:
-        if 'protocol_no' not in trial:
-            log.warning("Refusing to add trial without protocol_no")
-            continue
-        trial_del = db_rw['trial'].delete_many({'protocol_no': trial['protocol_no']})
-        log.info(f"Loading trial with protocol_no: {trial.get('protocol_no')}")
-        if trial_del.deleted_count:
-            log.warning("Deleted existing duplicate trial")
-        db_rw.trial.insert_one(trial)
+    # for trial in trials:
+    #     if 'protocol_no' not in trial:
+    #         log.warning("Refusing to add trial without protocol_no")
+    #         continue
+    #     trial_del = db_rw['trial'].delete_many({'protocol_no': trial['protocol_no']})
+    #     log.info(f"Loading trial with protocol_no: {trial.get('protocol_no')}")
+    #     if trial_del.deleted_count:
+    #         log.warning("Deleted existing duplicate trial")
+    #
+    #     db_rw.trial.insert_one(trial)
+    load_trials_from_api(db_rw, trials)
 
 def load_trials_from_api(db_rw, json_list: List[dict]):
     for trial in json_list:
@@ -83,6 +85,10 @@ def load_trials_from_api(db_rw, json_list: List[dict]):
         log.info(f"Loading trial with protocol_no: {trial.get('protocol_no')}")
         if trial_del.deleted_count:
             log.warning("Deleted existing duplicate trial")
+
+        # ensure protocol_no is a string
+        if isinstance(trial['protocol_no'], int):
+            trial['protocol_no'] = str(trial['protocol_no'])
         db_rw.trial.insert_one(trial)
 
 
