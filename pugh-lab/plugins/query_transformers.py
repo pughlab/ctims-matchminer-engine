@@ -126,9 +126,9 @@ class PughLabQueryTransformers(QueryTransformers):
         mmr_map = {
             'MMR-Proficient': 'Proficient (MMR-P / MSS)',
             'MMR-Deficient': 'Deficient (MMR-D / MSI-H)',
-            'MSI-H': 'Deficient (MMR-D / MSI-H)',
+            'MSI-H': 'High',
             'MSI-L': 'Proficient (MMR-P / MSS)',
-            'MSS': 'Proficient (MMR-P / MSS)'
+            'MSS': 'Stable'
         }
         trial_value, negate = self._is_negate(trial_value)
         sample_value = mmr_map[trial_value]
