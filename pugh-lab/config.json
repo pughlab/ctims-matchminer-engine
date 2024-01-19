@@ -87,7 +87,7 @@
           "sample_value": "mmr_ms_map"
         },
         "MS_STATUS": {
-          "sample_key": "MMR_STATUS",
+          "sample_key": "MS_STATUS",
           "sample_value": "mmr_ms_map"
         },
         "APOBEC_SIGNATURE": {

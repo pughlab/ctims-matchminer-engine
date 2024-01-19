@@ -160,3 +160,23 @@ class PughLabQueryTransformers(QueryTransformers):
             return QueryTransformerResult({sample_key: 'Negative'}, False)
         else:
             return QueryTransformerResult({sample_key: trial_value}, False)
+
+    def age_expression_query(self, **kwargs):
+        sample_key = kwargs['sample_key']
+        trial_value = kwargs['trial_value']
+        operator_map = {
+            "==": "$eq",
+            "<=": "$lte",
+            ">=": "$gte",
+            ">": "$gt",
+            "<": "$lt"
+        }
+        # funky logic is because 1 month curation is curated as "0.083" (1/12 a year)
+        operator = ''.join([i for i in trial_value if not i.isdigit() and i != '.'])
+        numeric = "".join([i for i in trial_value if i.isdigit() or i == '.'])
+        if numeric.startswith('.'):
+            numeric = '0' + numeric
+        split_time = numeric.split('.')
+        years = int(split_time[0] if split_time[0].isdigit() else 0)
+        return QueryTransformerResult({sample_key: {operator_map[operator]: years}}, False)
+
