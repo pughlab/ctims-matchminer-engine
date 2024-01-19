@@ -158,7 +158,8 @@
       "RIGHT_PARTNER_GENE",
       "STRUCTURAL_VARIANT_TYPE",
       "MOLECULAR_FUNCTION",
-      "MUTATION_EFFECT"
+      "MUTATION_EFFECT",
+      "MS_STATUS"
     ],
     "clinical": [
       "REPORT_DATE",

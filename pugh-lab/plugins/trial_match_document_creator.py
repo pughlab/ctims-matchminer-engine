@@ -96,7 +96,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             'query_hash': trial_match.match_criterion_hash,
             'match_path': '.'.join([str(item) for item in trial_match.match_clause_path]),
             'cancer_type_match': cancer_type_match,
-            'show_in_ui': show_in_ui,
+            # 'show_in_ui': show_in_ui,
         }
 
         # Add in additional fields we need for frontend
@@ -427,7 +427,8 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
         "RIGHT_PARTNER_GENE",
         "STRUCTURAL_VARIANT_TYPE",
         "MOLECULAR_FUNCTION",
-        "MUTATION_EFFECT"
+        "MUTATION_EFFECT",
+        "MS_STATUS"
     }
     _CLINICAL_COPY_FIELDS = {
         "REPORT_DATE",
