@@ -40,8 +40,6 @@ class PughLabQueryTransformers(QueryTransformers):
     def oncotree_case_insensitive_map(self, sample_key, trial_value, **kwargs):
         trial_value, negate = self._is_negate(trial_value)
         values = self._oncotree.get(trial_value, trial_value)
-        if negate:
-            values.append("NA")
 
         # transform to a series of 'or' clauses to avoid too long of regex string
         new_values = [
@@ -140,7 +138,7 @@ class PughLabQueryTransformers(QueryTransformers):
             'Inactivating': {"$in": ["Loss-of-function", "Likely Loss-of-function"]}
         }
         trial_value = kwargs['trial_value']
-        trial_value, negate = self.transform.is_negate(trial_value)
+        trial_value, negate = self._is_negate(trial_value)
         sample_key = kwargs['sample_key']
         sample_value = molecular_function_map[trial_value]
         ret = QueryTransformerResult({sample_key: sample_value}, negate)
