@@ -175,6 +175,6 @@ class PughLabQueryTransformers(QueryTransformers):
         if numeric.startswith('.'):
             numeric = '0' + numeric
         split_time = numeric.split('.')
-        years = int(split_time[0] if split_time[0].isdigit() else 0)
+        years = split_time[0] if split_time[0].isdigit() else "0"
         return QueryTransformerResult({sample_key: {operator_map[operator]: years}}, False)
 
