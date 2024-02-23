@@ -30,7 +30,7 @@
           "sample_key": "GENDER",
           "sample_value": "nomap"
         },
-        "TMB_NUMERICAL": {
+        "TMB": {
           "sample_key": "TUMOR_MUTATIONAL_BURDEN_PER_MEGABASE",
           "sample_value": "tmb_range_to_query"
         },

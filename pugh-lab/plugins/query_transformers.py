@@ -35,6 +35,9 @@ class PughLabQueryTransformers(QueryTransformers):
         numeric = "".join([i for i in trial_value if i.isdigit() or i == '.'])
         if numeric.startswith('.'):
             numeric = '0' + numeric
+        # default to equal if no operator is provided
+        if not operator:
+            operator = "=="
         return QueryTransformerResult({sample_key: {operator_map[operator]: float(numeric)}}, False)
 
     def oncotree_case_insensitive_map(self, sample_key, trial_value, **kwargs):
