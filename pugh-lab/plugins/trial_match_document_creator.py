@@ -112,7 +112,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             {
                 'query_hash': trial_match_doc['query_hash'],
                 'match_path': trial_match_doc['match_path'],
-                'protocol_no': trial_match_doc['protocol_no'],
+                #'protocol_no': trial_match_doc['protocol_no'],
             }
         )
 
