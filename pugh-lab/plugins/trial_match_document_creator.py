@@ -83,6 +83,19 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
                     cancer_type_match = 'all_solid'
                     break
 
+        # get the drug names for the match using trial ctml info and trial_match path
+        drug_names = ""
+        if len(trial_match.match_clause_path) >= 4:
+            trial_step_number = trial_match.match_clause_path[2]
+            trial_arm_number = trial_match.match_clause_path[4]
+            dose_levels = trial_match.trial['treatment_list']['step'][trial_step_number]['arm'][trial_arm_number]['dose_level']
+
+            for level in dose_levels:
+                if drug_names != "":
+                    drug_names = drug_names + "," + level['level_code']
+                else:
+                    drug_names = drug_names + level['level_code']
+
         match_parent = trial_match.match_clause_parent
         match_level = trial_match.match_clause_level
         trial_match_doc = {
@@ -96,6 +109,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             'query_hash': trial_match.match_criterion_hash,
             'match_path': '.'.join([str(item) for item in trial_match.match_clause_path]),
             'cancer_type_match': cancer_type_match,
+            'drug_name': drug_names,
             # 'show_in_ui': show_in_ui,
         }
 
