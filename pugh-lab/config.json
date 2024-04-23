@@ -1,7 +1,7 @@
 {
   "trial_collection": "trial",
-  "trial_identifier": "protocol_no",
-  "match_trial_link_id": "protocol_no",
+  "trial_identifier": "trial_internal_id",
+  "match_trial_link_id": "trial_internal_id",
   "trial_status_key": {
     "key_name": "summary",
     "open_to_accrual_values": ["open to accrual"]
@@ -181,6 +181,7 @@
     ],
     "trial": [
       "protocol_no",
+      "trial_internal_id",
       "nct_id",
       "treatment_list",
       "status",
@@ -231,6 +232,7 @@
       "sample_id",
       "clinical_id",
       "protocol_no",
+      "trial_internal_id",
       "is_disabled",
       "show_in_ui",
       ["protocol_no", "sample_id"]
