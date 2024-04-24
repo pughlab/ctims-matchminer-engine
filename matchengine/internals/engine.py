@@ -490,7 +490,7 @@ class MatchEngine(object):
         default_datetime = datetime.datetime.strptime('January 01, 0001', '%B %d, %Y')
         run_log_entries_by_protocol = dict()
         # print the protocols available
-        print(f"Protocols available: {self.protocol_nos}")
+        log.error(f"Protocols available: {self.protocol_nos}")
         for protocol_no in self.protocol_nos:
             trial = self.trials[protocol_no]
             trial_last_update = trial.get('_updated', default_datetime)
