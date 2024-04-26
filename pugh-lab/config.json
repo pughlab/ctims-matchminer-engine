@@ -182,7 +182,7 @@
     "trial": [
       "protocol_no",
       "trial_internal_id",
-      "nct_id",
+      "trial_id",
       "treatment_list",
       "status",
       "_summary"
@@ -233,6 +233,7 @@
       "clinical_id",
       "protocol_no",
       "trial_internal_id",
+      "trial_id",
       "is_disabled",
       "show_in_ui",
       ["protocol_no", "sample_id"]

@@ -110,6 +110,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             'match_path': '.'.join([str(item) for item in trial_match.match_clause_path]),
             'cancer_type_match': cancer_type_match,
             'drug_name': drug_names,
+            'trial_id': trial_match.trial['trial_id'],
             # 'show_in_ui': show_in_ui,
         }
 
