@@ -59,3 +59,13 @@ class DBSecrets:
         return self._secrets["MONGO_DBNAME"]
 
 
+    def get_rabbitmq_connections(self):
+        self._load_json()
+        return {
+            'RABBITMQ_URI': self._secrets["RABBITMQ_URI"],
+            'RABBITMQ_PORT': self._secrets["RABBITMQ_PORT"],
+            'SEND_QUEUE': self._secrets["SEND_QUEUE"],
+            'RECEIVE_QUEUE': self._secrets["RECEIVE_QUEUE"]
+        }
+
+
