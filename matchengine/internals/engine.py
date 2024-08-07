@@ -337,6 +337,9 @@ class MatchEngine(object):
         while True:
             # Execute update task
             task: Task = await self._task_q.get()
+            if task is None:
+                break
+
             args = (self, task, worker_id)
             task_class = task.__class__
             if task_class is PoisonPill:
