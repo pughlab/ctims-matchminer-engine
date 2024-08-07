@@ -91,10 +91,11 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             dose_levels = trial_match.trial['treatment_list']['step'][trial_step_number]['arm'][trial_arm_number]['dose_level']
 
             for level in dose_levels:
-                if drug_names != "":
-                    drug_names = drug_names + "," + level['level_code']
-                else:
-                    drug_names = drug_names + level['level_code']
+                if 'level_code' in level:
+                    if drug_names != "":
+                        drug_names = drug_names + "," + level['level_code']
+                    else:
+                        drug_names = drug_names + level['level_code']
 
         match_parent = trial_match.match_clause_parent
         match_level = trial_match.match_clause_level
