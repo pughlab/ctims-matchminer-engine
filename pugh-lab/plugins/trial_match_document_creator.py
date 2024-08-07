@@ -88,7 +88,12 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
         if len(trial_match.match_clause_path) >= 4:
             trial_step_number = trial_match.match_clause_path[2]
             trial_arm_number = trial_match.match_clause_path[4]
-            dose_levels = trial_match.trial['treatment_list']['step'][trial_step_number]['arm'][trial_arm_number]['dose_level']
+            trial_arm_obj = trial_match.trial['treatment_list']['step'][trial_step_number]['arm'][trial_arm_number]
+            if 'dose_level' in trial_arm_obj:
+                # dose_levels = trial_match.trial['treatment_list']['step'][trial_step_number]['arm'][trial_arm_number]['dose_level']
+                dose_levels = trial_arm_obj['dose_level']
+            else:
+                dose_levels = []
 
             for level in dose_levels:
                 if 'level_code' in level:
