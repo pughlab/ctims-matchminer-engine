@@ -454,6 +454,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
         "ONCOTREE_PRIMARY_DIAGNOSIS_NAME",
         "TUMOR_MUTATIONAL_BURDEN_PER_MEGABASE",
         "PATIENT_ID",
+        "STUDY_ID",
         "VITAL_STATUS",
         "AGE",
         "HER2_STATUS",
