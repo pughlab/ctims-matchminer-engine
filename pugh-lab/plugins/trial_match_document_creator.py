@@ -85,6 +85,8 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
 
         # get the drug names for the match using trial ctml info and trial_match path
         drug_names = ""
+        trial_step_number = ""
+        trial_arm_number = ""
         if len(trial_match.match_clause_path) >= 4:
             trial_step_number = trial_match.match_clause_path[2]
             trial_arm_number = trial_match.match_clause_path[4]
@@ -115,6 +117,8 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             'query_hash': trial_match.match_criterion_hash,
             'match_path': '.'.join([str(item) for item in trial_match.match_clause_path]),
             'cancer_type_match': cancer_type_match,
+            'trial_step_number': trial_step_number,
+            'trial_arm_number': trial_arm_number,
             'drug_name': drug_names,
             'trial_id': trial_match.trial['trial_id'],
             # 'show_in_ui': show_in_ui,
