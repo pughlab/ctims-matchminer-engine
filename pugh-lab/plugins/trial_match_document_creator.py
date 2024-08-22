@@ -88,8 +88,8 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
         trial_step_number = ""
         trial_arm_number = ""
         if len(trial_match.match_clause_path) >= 4:
-            trial_step_number = int(trial_match.match_clause_path[2]) + 1
-            trial_arm_number = int(trial_match.match_clause_path[4]) + 1
+            trial_step_number = trial_match.match_clause_path[2]
+            trial_arm_number = trial_match.match_clause_path[4]
             trial_arm_obj = trial_match.trial['treatment_list']['step'][trial_step_number]['arm'][trial_arm_number]
             if 'dose_level' in trial_arm_obj:
                 # dose_levels = trial_match.trial['treatment_list']['step'][trial_step_number]['arm'][trial_arm_number]['dose_level']
@@ -117,8 +117,8 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             'query_hash': trial_match.match_criterion_hash,
             'match_path': '.'.join([str(item) for item in trial_match.match_clause_path]),
             'cancer_type_match': cancer_type_match,
-            'trial_step_number': str(trial_step_number),
-            'trial_arm_number': str(trial_arm_number),
+            'trial_step_number': str(1 + trial_step_number),
+            'trial_arm_number': str(1 + trial_arm_number),
             'drug_name': drug_names,
             'trial_id': trial_match.trial['trial_id'],
             # 'show_in_ui': show_in_ui,
