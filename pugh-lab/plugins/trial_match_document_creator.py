@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 from matchengine.internals.utilities.object_comparison import nested_object_hash
 
@@ -155,6 +156,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             'q_width': len(match_reason.reference_docs),
             'query': match_reason.query,
         }
+        logging.info(f"render inclusion: {match_reason.query_kind}: {match_reason.query}")
 
         if match_reason.query_kind == 'genomic':
             reason_match_doc.update({k.lower(): v for k, v in document.items() if k in self._GENOMIC_COPY_FIELDS})
@@ -185,6 +187,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             'q_width': -1,
             'query': match_reason.query,
         }
+        logging.info(f"render exclusion: {match_reason.query_kind}: {match_reason.query}")
 
         if match_reason.query_kind == 'genomic':
             match_type, alteration = self._format_genomic_exclusion_match(match_reason, clinical_doc)
