@@ -43,7 +43,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
         reason_docs = [
             reason_doc
             for reason_doc in reason_docs
-            # if reason_doc.get('match_type') != 'generic_clinical'
+            if reason_doc.get('match_type') != 'generic_clinical'
         ]
         if not reason_docs:
             reason_docs = [{}]
@@ -289,8 +289,8 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
                 "tmb",
                 f"TMB = {c_tmb}",
             )
-        c_prior_treatment = match_reason.query.get("agent")
-        q_prior_treatment = match_reason.query.get("prior_treatment_agent")
+        c_prior_treatment = clinical_doc.get("AGENT")
+        q_prior_treatment = match_reason.query.get("agent")
         if c_prior_treatment and q_prior_treatment:
             return (
                 "prior_treatment_agent",
