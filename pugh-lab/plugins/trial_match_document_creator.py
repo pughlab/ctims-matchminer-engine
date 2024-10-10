@@ -289,8 +289,8 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
                 "tmb",
                 f"TMB = {c_tmb}",
             )
-        c_prior_treatment = match_reason.query.get("agent")
-        q_prior_treatment = match_reason.query.get("prior_treatment_agent")
+        c_prior_treatment = clinical_doc.get("AGENT")
+        q_prior_treatment = match_reason.query.get("agent")
         if c_prior_treatment and q_prior_treatment:
             return (
                 "prior_treatment_agent",
