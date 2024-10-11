@@ -118,8 +118,8 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             'query_hash': trial_match.match_criterion_hash,
             'match_path': '.'.join([str(item) for item in trial_match.match_clause_path]),
             'cancer_type_match': cancer_type_match,
-            'trial_step_number': trial_step_number,
-            'trial_arm_number': trial_arm_number,
+            'trial_step_number': str(1 + trial_step_number),
+            'trial_arm_number': str(1 + trial_arm_number),
             'drug_name': drug_names,
             'trial_id': trial_match.trial['trial_id'],
             'prior_treatment_agent': trial_match.clinical_doc['AGENT'] if 'AGENT' in trial_match.clinical_doc else ''
