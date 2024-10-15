@@ -130,7 +130,8 @@ class MatchEngine(object):
             chunk_size: int = 1000,
             age_comparison_date = None,
             delete_run_logs = False,
-            start_time_utc = None
+            start_time_utc = None,
+            failed_protocol_nos = {}
     ):
         self.run_id = uuid.uuid4()
 
@@ -158,6 +159,7 @@ class MatchEngine(object):
         self.fig_dir = fig_dir
         self._matches = {}
         self._clinical_ids_by_protocol = {}
+        self.failed_protocol_nos = {}
 
         log.info(f"Age comparison date: {self.age_comparison_date}")
 
@@ -412,9 +414,12 @@ class MatchEngine(object):
         """
         Get the trial matches for a given protocol number
         """
-        for protocol_no in self.protocol_nos:
-            await self._async_get_matches_for_trial(protocol_no)
 
+        for protocol_no in self.protocol_nos:
+            try:
+                await self._async_get_matches_for_trial(protocol_no)
+            except:
+                self.failed_protocol_nos[protocol_no] = "error"
 
     async def _async_get_matches_for_trial(self, protocol_no):
         """
