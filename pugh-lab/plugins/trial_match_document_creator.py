@@ -67,7 +67,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
                 "true_transcript_exon": reason_doc.get("true_transcript_exon", ""),
                 "true_protein_change": reason_doc.get("true_protein_change", ""),
                 "prior_treatment_agent": base_match_doc.get("prior_treatment_agent",""),
-                "oncotree_primary_diagnosis_match_only": base_match_doc.get("oncotree_primary_diagnosis_match_only", "")
+                "oncotree_primary_diagnosis_match_value": base_match_doc.get("oncotree_primary_diagnosis_match_value", "")
             }
             # Filter out key-value pairs where the value is an empty string
             filtered_data = {k: v for k, v in patient_match_values_dict.items() if v != "" and v !="NA"}
@@ -161,7 +161,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
                 diagnosis = tv.get('oncotree_primary_diagnosis_name')
                 if diagnosis != 'NONE':
                     actual_match_value = trial_match.clinical_doc.get('ONCOTREE_PRIMARY_DIAGNOSIS_NAME')
-                    trial_match_doc.update({'oncotree_primary_diagnosis_match_only': str(actual_match_value)})
+                    trial_match_doc.update({'oncotree_primary_diagnosis_match_value': str(actual_match_value)})
                         
         # add trial fields except for extras
         trial_match_doc.update({k: v for k, v in trial_match.trial.items() if k in self._TRIAL_COPY_FIELDS})
