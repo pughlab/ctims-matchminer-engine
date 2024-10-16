@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 from matchengine.internals.utilities.object_comparison import nested_object_hash
 
@@ -117,11 +118,11 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             'query_hash': trial_match.match_criterion_hash,
             'match_path': '.'.join([str(item) for item in trial_match.match_clause_path]),
             'cancer_type_match': cancer_type_match,
-            'trial_step_number': trial_step_number,
-            'trial_arm_number': trial_arm_number,
+            'trial_step_number': str(1 + trial_step_number),
+            'trial_arm_number': str(1 + trial_arm_number),
             'drug_name': drug_names,
             'trial_id': trial_match.trial['trial_id'],
-            'prior_treatment_agent': trial_match.clinical_doc['AGENT'],
+            'prior_treatment_agent': trial_match.clinical_doc['AGENT'] if 'AGENT' in trial_match.clinical_doc else ''
             # 'show_in_ui': show_in_ui,
         }
 
@@ -153,6 +154,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             'reason_type': match_reason.query_kind,
             'q_depth': match_reason.depth,
             'q_width': len(match_reason.reference_docs),
+            'query': match_reason.query,
         }
 
         if match_reason.query_kind == 'genomic':
@@ -182,7 +184,9 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             'reason_type': match_reason.query_kind,
             'q_depth': match_reason.depth,
             'q_width': -1,
+            'query': match_reason.query,
         }
+        logging.info(f"render exclusion: {match_reason.query_kind}: {match_reason.query}")
 
         if match_reason.query_kind == 'genomic':
             match_type, alteration = self._format_genomic_exclusion_match(match_reason, clinical_doc)
@@ -283,6 +287,13 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             return (
                 "tmb",
                 f"TMB = {c_tmb}",
+            )
+        c_prior_treatment = clinical_doc.get("AGENT")
+        q_prior_treatment = match_reason.query.get("agent")
+        if c_prior_treatment and q_prior_treatment:
+            return (
+                "prior_treatment_agent",
+                f"Prior Treatment Agent: {c_prior_treatment}",
             )
         else:
             return 'generic_clinical', "Clinical"
