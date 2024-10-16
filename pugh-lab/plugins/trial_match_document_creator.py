@@ -53,7 +53,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             match_doc = {}
             match_doc.update(base_match_doc)
             match_doc.update(reason_doc)
-            combined_data_dict = {
+            patient_match_values_dict = {
                 "genomic_alteration": reason_doc.get("genomic_alteration", ""),
                 "match_type": reason_doc.get("match_type", ""),
                 "ms_status": base_match_doc.get("ms_status", ""),
@@ -67,14 +67,15 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
                 "variant_category": reason_doc.get("variant_category", ""),
                 "true_transcript_exon": reason_doc.get("true_transcript_exon", ""),
                 "true_protein_change": reason_doc.get("true_protein_change", ""),
-                "prior_treatment_agent": base_match_doc.get("prior_treatment_agent","") 
+                "prior_treatment_agent": base_match_doc.get("prior_treatment_agent",""),
+                "oncotree_primary_diagnosis_match_only": base_match_doc.get("oncotree_primary_diagnosis_match_only", "")
             }
             # Filter out key-value pairs where the value is an empty string
-            filtered_data = {k: v for k, v in combined_data_dict.items() if v != "" and v !="NA"}
+            filtered_data = {k: v for k, v in patient_match_values_dict.items() if v != "" and v !="NA"}
 
             # Convert the filtered dictionary to a JSON-like string format
-            combined_data = f'{filtered_data}'
-            match_doc['combined_data'] = combined_data
+            patient_match_values = f'{filtered_data}'
+            match_doc['patient_match_values'] = patient_match_values
             match_doc["sort_order"] = self._get_sort_order(match_doc)
             results.append(match_doc)
 
