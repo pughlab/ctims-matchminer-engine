@@ -130,8 +130,7 @@ class MatchEngine(object):
             chunk_size: int = 1000,
             age_comparison_date = None,
             delete_run_logs = False,
-            start_time_utc = None,
-            failed_protocol_nos = {}
+            start_time_utc = None
     ):
         self.run_id = uuid.uuid4()
 
@@ -392,7 +391,9 @@ class MatchEngine(object):
             log.info(f"Updated matches for deleted protocols: {upd.fmt()}")
 
         for protocol_number in self.protocol_nos:
-            self.update_matches_for_protocol_number(protocol_number, dry_run)
+            # only update the protocols that are not failed in the get match process
+            if protocol_number not in self.failed_protocol_nos:
+                self.update_matches_for_protocol_number(protocol_number, dry_run)
 
         if not dry_run:
             log.info(f"Updated all matches: {self.global_update_tracker.fmt()}")
