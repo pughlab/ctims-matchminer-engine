@@ -53,6 +53,29 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             match_doc = {}
             match_doc.update(base_match_doc)
             match_doc.update(reason_doc)
+            patient_match_values_dict = {
+                "genomic_alteration": reason_doc.get("genomic_alteration", ""),
+                "match_type": reason_doc.get("match_type", ""),
+                "ms_status": base_match_doc.get("ms_status", ""),
+                "oncotree_primary_diagnosis_name": base_match_doc.get("oncotree_primary_diagnosis_name", ""),
+                "age": base_match_doc.get("age", ""),
+                "er_status": base_match_doc.get("er_status", ""),
+                "her2_status": base_match_doc.get("her2_status", ""),
+                "pr_status": base_match_doc.get("pr_status", ""),
+                "true_hugo_symbol": reason_doc.get("true_hugo_symbol", ""),
+                "true_variant_classification": reason_doc.get("true_variant_classification", ""),
+                "variant_category": reason_doc.get("variant_category", ""),
+                "true_transcript_exon": reason_doc.get("true_transcript_exon", ""),
+                "true_protein_change": reason_doc.get("true_protein_change", ""),
+                "prior_treatment_agent": base_match_doc.get("prior_treatment_agent",""),
+                "oncotree_primary_diagnosis_match_value": base_match_doc.get("oncotree_primary_diagnosis_match_value", "")
+            }
+            # Filter out key-value pairs where the value is an empty string
+            filtered_data = {k: v for k, v in patient_match_values_dict.items() if v != "" and v !="NA"}
+
+            # Convert the filtered dictionary to a JSON-like string format
+            patient_match_values = f'{filtered_data}'
+            match_doc['patient_match_values'] = patient_match_values
             match_doc["sort_order"] = self._get_sort_order(match_doc)
             results.append(match_doc)
 
@@ -133,6 +156,14 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
         trial_match_doc.update(
             {k.lower(): v for k, v in trial_match.clinical_doc.items() if k in self._CLINICAL_COPY_FIELDS}
         )
+        for reason in trial_match.match_reasons:
+            if reason.query_kind == 'clinical':
+                tv = reason.query
+                diagnosis = tv.get('oncotree_primary_diagnosis_name')
+                if diagnosis != 'NONE':
+                    actual_match_value = trial_match.clinical_doc.get('ONCOTREE_PRIMARY_DIAGNOSIS_NAME')
+                    trial_match_doc.update({'oncotree_primary_diagnosis_match_value': str(actual_match_value)})
+                        
         # add trial fields except for extras
         trial_match_doc.update({k: v for k, v in trial_match.trial.items() if k in self._TRIAL_COPY_FIELDS})
         trial_match_doc['combo_coord'] = nested_object_hash(
