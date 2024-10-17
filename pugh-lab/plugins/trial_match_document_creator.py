@@ -190,7 +190,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             'reason_type': match_reason.query_kind,
             'q_depth': match_reason.depth,
             'q_width': len(match_reason.reference_docs),
-            'query': match_reason.query,
+            'query': f'{match_reason.query}',
         }
 
         if match_reason.query_kind == 'genomic':
@@ -220,7 +220,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             'reason_type': match_reason.query_kind,
             'q_depth': match_reason.depth,
             'q_width': -1,
-            'query': match_reason.query,
+            'query': f'{match_reason.query}',
         }
         logging.info(f"render exclusion: {match_reason.query_kind}: {match_reason.query}")
 
