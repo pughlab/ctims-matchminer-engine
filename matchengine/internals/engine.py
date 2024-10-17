@@ -158,6 +158,7 @@ class MatchEngine(object):
         self.fig_dir = fig_dir
         self._matches = {}
         self._clinical_ids_by_protocol = {}
+        self.failed_protocol_nos = {}
 
         log.info(f"Age comparison date: {self.age_comparison_date}")
 
@@ -390,7 +391,9 @@ class MatchEngine(object):
             log.info(f"Updated matches for deleted protocols: {upd.fmt()}")
 
         for protocol_number in self.protocol_nos:
-            self.update_matches_for_protocol_number(protocol_number, dry_run)
+            # only update the protocols that are not failed in the get match process
+            if protocol_number not in self.failed_protocol_nos:
+                self.update_matches_for_protocol_number(protocol_number, dry_run)
 
         if not dry_run:
             log.info(f"Updated all matches: {self.global_update_tracker.fmt()}")
@@ -412,9 +415,12 @@ class MatchEngine(object):
         """
         Get the trial matches for a given protocol number
         """
-        for protocol_no in self.protocol_nos:
-            await self._async_get_matches_for_trial(protocol_no)
 
+        for protocol_no in self.protocol_nos:
+            try:
+                await self._async_get_matches_for_trial(protocol_no)
+            except:
+                self.failed_protocol_nos[protocol_no] = "error"
 
     async def _async_get_matches_for_trial(self, protocol_no):
         """
