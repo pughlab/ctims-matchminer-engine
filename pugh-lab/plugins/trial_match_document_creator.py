@@ -76,6 +76,11 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             # Convert the filtered dictionary to a JSON-like string format
             patient_match_values = f'{filtered_data}'
             match_doc['patient_match_values'] = patient_match_values
+            # Try to add all 3 match reason (age, clinical, genomic) together
+            query_list = []
+            for reason in trial_match.match_reasons:
+                query_list.append(reason.query)
+            match_doc['queries_used'] = f'{query_list}'
             match_doc["sort_order"] = self._get_sort_order(match_doc)
             results.append(match_doc)
 
