@@ -471,4 +471,4 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
         "PR_STATUS",
         "ER_STATUS"
     }
-    _TRIAL_COPY_FIELDS = {'protocol_no', 'nct_id'}
+    _TRIAL_COPY_FIELDS = {'protocol_no', 'short_title', 'nickname', 'nct_id'}
