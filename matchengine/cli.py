@@ -125,6 +125,14 @@ def run_cli():
         help=('Path to genomic data to load'),
     )
     subp_p.add_argument(
+        '-p',
+        '--treatment',
+        dest='treatment',
+        metavar='PATH',
+        default=None,
+        help=('Path to prior treatment data to load'),
+    )
+    subp_p.add_argument(
         '--db',
         dest='db_name',
         metavar='DB',
