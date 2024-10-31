@@ -54,12 +54,12 @@ def load(args: Namespace):
             log.info('Adding genomic data to mongo...')
             load_genomic(db_rw, args)
 
-        if args.treatment:
+        if args.prior_treatment:
             if len(list(db_rw.clinical.find({}))) == 0:
                 log.warning("No clinical documents in db. Please load clinical documents before loading prior treatment.")
 
             log.info('Adding prior treatment data to mongo...')
-            load_treatment(db_rw, args)
+            load_prior_treatment(db_rw, args)
 
         log.info('Done.')
 
@@ -201,25 +201,25 @@ def load_genomic(db_rw, args):
     for c in ok_genomics:
         db_rw['genomic'].insert_one(c)
 
-def load_treatment(db_rw, args):
+def load_prior_treatment(db_rw, args):
     if args.drop:
-        r = db_rw['treatment'].delete_many({})
+        r = db_rw['prior_treatment'].delete_many({})
         log.info(f"Dropped {r.deleted_count} prior treatment documents")
-    treatments = items_from_path(Path(args.treatment))
+    prior_treatments = items_from_path(Path(args.prior_treatment))
     clinical_dict = {item['SAMPLE_ID']: item['_id'] for item in db_rw['clinical'].find({}, {'_id': 1, 'SAMPLE_ID': 1})}
-    ok_treatments, bad_treatments = [], []
-    for t in treatments:
-        if t.get('CLINICAL_ID'):
-            ok_treatments.append(t)
-        elif t.get('SAMPLE_ID') in clinical_dict:
-            t['CLINICAL_ID'] = clinical_dict[t['SAMPLE_ID']]
-            ok_treatments.append(t)
+    ok_prior_treatments, bad_prior_treatments = [], []
+    for pt in prior_treatments:
+        if pt.get('CLINICAL_ID'):
+            ok_prior_treatments.append(pt)
+        elif pt.get('SAMPLE_ID') in clinical_dict:
+            pt['CLINICAL_ID'] = clinical_dict[pt['SAMPLE_ID']]
+            ok_prior_treatments.append(pt)
         else:
-            bad_treatments.append(t)
+            bad_prior_treatments.append(pt)
 
-    if bad_treatments:
-        log.warning(f"Ignoring {len(bad_treatments)} prior treatment documents with no corresponding clinical documents")
+    if bad_prior_treatments:
+        log.warning(f"Ignoring {len(bad_prior_treatments)} prior treatment documents with no corresponding clinical documents")
 
-    log.info(f"Loading {len(ok_treatments)} prior treatment documents")
-    for c in ok_treatments:
-        db_rw['treatment'].insert_one(c)
+    log.info(f"Loading {len(ok_prior_treatments)} prior treatment documents")
+    for c in ok_prior_treatments:
+        db_rw['prior_treatment'].insert_one(c)
