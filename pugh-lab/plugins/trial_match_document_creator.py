@@ -121,7 +121,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             'trial_arm_number': trial_arm_number,
             'drug_name': drug_names,
             'trial_id': trial_match.trial['trial_id'],
-            'prior_treatment_agent': trial_match.clinical_doc['AGENT'],
+            # 'prior_treatment_agent': trial_match.['AGENT'],
             # 'show_in_ui': show_in_ui,
         }
 
