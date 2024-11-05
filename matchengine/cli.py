@@ -126,8 +126,8 @@ def run_cli():
     )
     subp_p.add_argument(
         '-p',
-        '--treatment',
-        dest='treatment',
+        '--prior-treatment',
+        dest='prior_treatment',
         metavar='PATH',
         default=None,
         help=('Path to prior treatment data to load'),
