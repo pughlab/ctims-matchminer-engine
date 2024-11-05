@@ -144,7 +144,7 @@
       "trial_key_mappings": {
         "prior_treatment_agent": {
           "sample_key": "AGENT",
-          "sample_value": "nomap"
+          "sample_value": "prior_treatment_agent_case_insensitive_map"
         }
       }
     }
