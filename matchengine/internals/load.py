@@ -162,6 +162,12 @@ def load_clinical(db_rw, args):
             c['BIRTH_DATE'] = fixed_date
             c['BIRTH_DATE_INT'] = int(fixed_date.strftime('%Y%m%d'))
 
+        if isinstance(c.get('AGE'), str):
+            if c['AGE'] != 'NA':
+                c['AGE'] = int(c['AGE'])
+            else:
+                c['AGE'] = None
+
     log.info(f"Loading {len(clinicals)} clinical documents")
 
     for c in clinicals:
