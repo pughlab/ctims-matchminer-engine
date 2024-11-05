@@ -134,9 +134,25 @@
           "sample_value": "genomic_dummy_map"
         }
       }
+    },
+    "prior_treatment": {
+      "query_collection": "prior_treatment",
+      "join_field": "CLINICAL_ID",
+      "id_field": "_id",
+      "break_queries_into_parts": false,
+      "join_order": 20,
+      "trial_key_mappings": {
+        "prior_treatment_agent": {
+          "sample_key": "AGENT",
+          "sample_value": "nomap"
+        }
+      }
     }
   },
   "projections": {
+    "prior_treatment": [
+      "AGENT"
+    ],
     "genomic": [
       "TRUE_CDNA_CHANGE",
       "REFERENCE_ALLELE",
@@ -201,6 +217,11 @@
     ]
   },
   "indices": {
+    "prior_treatment": [
+      "SAMPLE_ID",
+      "CLINICAL_ID",
+      "AGENT"
+    ],
     "genomic": [
       "SAMPLE_ID",
       "CLINICAL_ID",
