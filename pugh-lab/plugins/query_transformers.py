@@ -182,3 +182,7 @@ class PughLabQueryTransformers(QueryTransformers):
         years_int = int(years)
         return QueryTransformerResult({sample_key: {operator_map[operator]: years_int}}, False)
 
+    def prior_treatment_agent_case_insensitive_map(self, sample_key, trial_value, **kwargs):
+        trial_value, negate = self._is_negate(trial_value)
+
+        return QueryTransformerResult({sample_key: {'$regex': f'^{trial_value}$', '$options': 'i'}}, negate)
