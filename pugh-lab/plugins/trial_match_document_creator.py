@@ -169,8 +169,15 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
                     actual_match_value = trial_match.clinical_doc.get('ONCOTREE_PRIMARY_DIAGNOSIS_NAME')
                     trial_match_doc.update({'oncotree_primary_diagnosis_match_value': str(actual_match_value)})
             if reason.query_kind == "prior_treatment" and reason.reference_docs:
-                agent = reason.reference_docs[0].get("AGENT")
-                trial_match_doc.update({'prior_treatment_agent': agent})
+                agents = []
+                existing_agents = trial_match_doc.get('prior_treatment_agent')
+                if existing_agents:
+                    agents.append(existing_agents)
+                for rdoc in reason.reference_docs:
+                    agent = rdoc.get("AGENT")
+                    if agent and agent not in agents:
+                        agents.append(agent)
+                trial_match_doc.update({'prior_treatment_agent': ",".join(agents)})
                         
         # add trial fields except for extras
         trial_match_doc.update({k: v for k, v in trial_match.trial.items() if k in self._TRIAL_COPY_FIELDS})
