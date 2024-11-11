@@ -43,7 +43,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
         reason_docs = [
             reason_doc
             for reason_doc in reason_docs
-            if reason_doc.get('match_type') != 'generic_clinical'
+            if (reason_doc.get('match_type') != 'generic_clinical') and (reason_doc.get('match_type') != 'prior_treatment_agent')
         ]
         if not reason_docs:
             reason_docs = [{}]
@@ -168,6 +168,9 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
                 if diagnosis != 'NONE':
                     actual_match_value = trial_match.clinical_doc.get('ONCOTREE_PRIMARY_DIAGNOSIS_NAME')
                     trial_match_doc.update({'oncotree_primary_diagnosis_match_value': str(actual_match_value)})
+            if reason.query_kind == "prior_treatment" and reason.reference_docs:
+                agent = reason.reference_docs[0].get("AGENT")
+                trial_match_doc.update({'prior_treatment_agent': agent})
                         
         # add trial fields except for extras
         trial_match_doc.update({k: v for k, v in trial_match.trial.items() if k in self._TRIAL_COPY_FIELDS})
@@ -209,6 +212,14 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             )
             if match_type == 'tmb':
                 reason_match_doc['variant_category'] = 'TMB'
+        elif match_reason.query_kind == 'prior_treatment':
+            match_type, alteration = self._format_prior_treatment_match(match_reason, document)
+            reason_match_doc.update(
+                {
+                    'match_type': str(match_type),
+                    'genomic_alteration': str(alteration),
+                }
+            )
         return reason_match_doc
 
     def _render_exclusion_match(self, match_reason: MatchReason, clinical_doc):
@@ -231,6 +242,9 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             reason_match_doc['genomic_alteration'] = '!' + str(alteration)
         elif match_reason.query_kind == 'clinical':
             match_type, alteration = self._format_clinical_exclusion_match(match_reason)
+            reason_match_doc.update({'match_type': str(match_type), 'genomic_alteration': '!' + str(alteration)})
+        elif match_reason.query_kind == 'prior_treatment':
+            match_type, alteration = self._format_prior_treatment_exclusion_match(match_reason)
             reason_match_doc.update({'match_type': str(match_type), 'genomic_alteration': '!' + str(alteration)})
 
         return reason_match_doc
@@ -324,13 +338,6 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
                 "tmb",
                 f"TMB = {c_tmb}",
             )
-        c_prior_treatment = clinical_doc.get("AGENT")
-        q_prior_treatment = match_reason.query.get("agent")
-        if c_prior_treatment and q_prior_treatment:
-            return (
-                "prior_treatment_agent",
-                f"Prior Treatment Agent: {c_prior_treatment}",
-            )
         else:
             return 'generic_clinical', "Clinical"
 
@@ -339,6 +346,30 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
         Get match_type and genomic_alteration fields for exclusion clinical matches.
         """
         return 'generic_clinical', "Clinical"
+
+    def _format_prior_treatment_match(self, match_reason: MatchReason, treatment_doc: dict):
+        """
+        Get match_type and genomic_alteration fields for prior treatment matches.
+        """
+        agent = treatment_doc.get("AGENT")
+        if agent:
+            return (
+                "prior_treatment_agent",
+                f"Prior Treatment Agent: {agent}",
+            )
+        else:
+            return 'prior_treatment_agent', "prior_treatment_agent"
+
+    def _format_prior_treatment_exclusion_match(self, match_reason: MatchReason, treatment_doc: dict):
+        """
+        Get match_type and genomic_alteration fields for exclusion clinical matches.
+        """
+        agent = treatment_doc.get("AGENT")
+        if agent:
+            return (
+                "prior_treatment_agent",
+                f"Prior Treatment Agent: !{agent}"
+            )
 
     def _fmt_crit(self, trial_value):
         """

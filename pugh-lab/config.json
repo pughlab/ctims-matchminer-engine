@@ -46,10 +46,6 @@
           "sample_key": "ER_STATUS",
           "sample_value": "true_false_map"
         },
-        "AGENT": {
-          "sample_key": "AGENT",
-          "sample_value": "nomap"
-        },
         "DISEASE_STATUS": {
           "ignore": true
         }
