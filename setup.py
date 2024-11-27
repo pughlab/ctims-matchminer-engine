@@ -4,10 +4,20 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setup(
-    name="MatchEngine V2",
+    name="PMatchEngine",
     version="2.2.3",
     packages=find_packages(),
-    package_data={'matchengine': ['defaults/**/*', 'defaults/*']},
+    package_data={
+        'matchengine': ['defaults/**/*', 'defaults/*'],
+    },
+    data_files=[('pugh-lab', [
+        'pugh-lab/plugins/__init__.py',
+        'pugh-lab/plugins/clinical_filter.py',
+        'pugh-lab/plugins/oncotree_mapping.json',
+        'pugh-lab/plugins/query_processor.py',
+        'pugh-lab/plugins/query_transformers.py',
+        'pugh-lab/plugins/trial_match_document_creator.py',
+        'pugh-lab/config.json'])],
     author='Eric Marriott, Ethan Siegel',
     author_email='esiegel@ds.dfci.harvard.edu',
     description='Open source engine for matching cancer patients to precision medicine clinical trials (V2).',
@@ -28,7 +38,9 @@ setup(
     ],
     include_package_data=True,
     python_requires='>=3.7,<3.11',
-    download_url='https://github.com/dfci/matchengine-V2/archive/2.0.0.tar.gz',
+    # download_url='https://github.com/dfci/matchengine-V2/archive/2.0.0.tar.gz',
+    download_url='https://github.com/pughlab/pmatchengine-pugh-lab/archive/mickey-qa-deploy.tar.gz',
+
     classifiers=[
         "Environment :: Console",
         "Intended Audience :: Healthcare Industry",

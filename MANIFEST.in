@@ -1,3 +1,5 @@
 include README.md
 include matchengine/config/*.json
 include matchengine/ref/oncotree_mapping.json
+include pugh-lab/config.json
+include pugh-lab/plugins/oncotree_mapping.json

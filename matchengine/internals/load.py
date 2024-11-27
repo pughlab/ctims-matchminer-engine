@@ -5,6 +5,7 @@ import logging
 import os
 from argparse import Namespace
 from contextlib import ExitStack
+from typing import List
 
 import yaml
 import io
@@ -34,8 +35,13 @@ def load(args: Namespace):
         db_rw = stack.enter_context(MongoDBConnection(read_only=False, db=args.db_name, async_init=False))
         log.info(f"Database: {args.db_name}")
         if args.trial:
-            log.info('Adding trial(s) to mongo...')
-            load_trials(db_rw, args)
+            if hasattr(args, 'from_api'):
+                if args.from_api:
+                    load_trials_from_api(db_rw, args.trial)
+                else:
+                    load_trials(db_rw, args)
+            else:
+                load_trials(db_rw, args)
 
         if args.clinical:
             log.info('Adding clinical data to mongo...')
@@ -48,6 +54,13 @@ def load(args: Namespace):
             log.info('Adding genomic data to mongo...')
             load_genomic(db_rw, args)
 
+        if args.prior_treatment:
+            if len(list(db_rw.clinical.find({}))) == 0:
+                log.warning("No clinical documents in db. Please load clinical documents before loading prior treatment.")
+
+            log.info('Adding prior treatment data to mongo...')
+            load_prior_treatment(db_rw, args)
+
         log.info('Done.')
 
 
@@ -58,14 +71,31 @@ def load(args: Namespace):
 
 def load_trials(db_rw, args: Namespace):
     trials = items_from_path(Path(args.trial))
-    for trial in trials:
-        if 'protocol_no' not in trial:
-            log.warning("Refusing to add trial without protocol_no")
+    # for trial in trials:
+    #     if 'protocol_no' not in trial:
+    #         log.warning("Refusing to add trial without protocol_no")
+    #         continue
+    #     trial_del = db_rw['trial'].delete_many({'protocol_no': trial['protocol_no']})
+    #     log.info(f"Loading trial with protocol_no: {trial.get('protocol_no')}")
+    #     if trial_del.deleted_count:
+    #         log.warning("Deleted existing duplicate trial")
+    #
+    #     db_rw.trial.insert_one(trial)
+    load_trials_from_api(db_rw, trials)
+
+def load_trials_from_api(db_rw, json_list: List[dict]):
+    for trial in json_list:
+        if 'trial_internal_id' not in trial:
+            log.warning("Refusing to add trial without trial_internal_id")
             continue
-        trial_del = db_rw['trial'].delete_many({'protocol_no': trial['protocol_no']})
-        log.info(f"Loading trial with protocol_no: {trial.get('protocol_no')}")
+        trial_del = db_rw['trial'].delete_many({'trial_internal_id': trial['trial_internal_id']})
+        log.info(f"Loading trial with trial_internal_id: {trial.get('trial_internal_id')}")
         if trial_del.deleted_count:
             log.warning("Deleted existing duplicate trial")
+
+        # ensure trial_internal_id is a string
+        if isinstance(trial['trial_internal_id'], int):
+            trial['trial_internal_id'] = str(trial['trial_internal_id'])
         db_rw.trial.insert_one(trial)
 
 
@@ -132,6 +162,12 @@ def load_clinical(db_rw, args):
             c['BIRTH_DATE'] = fixed_date
             c['BIRTH_DATE_INT'] = int(fixed_date.strftime('%Y%m%d'))
 
+        if isinstance(c.get('AGE'), str):
+            if c['AGE'] != 'NA':
+                c['AGE'] = int(c['AGE'])
+            else:
+                c['AGE'] = None
+
     log.info(f"Loading {len(clinicals)} clinical documents")
 
     for c in clinicals:
@@ -170,3 +206,26 @@ def load_genomic(db_rw, args):
     log.info(f"Loading {len(ok_genomics)} genomic documents")
     for c in ok_genomics:
         db_rw['genomic'].insert_one(c)
+
+def load_prior_treatment(db_rw, args):
+    if args.drop:
+        r = db_rw['prior_treatment'].delete_many({})
+        log.info(f"Dropped {r.deleted_count} prior treatment documents")
+    prior_treatments = items_from_path(Path(args.prior_treatment))
+    clinical_dict = {item['SAMPLE_ID']: item['_id'] for item in db_rw['clinical'].find({}, {'_id': 1, 'SAMPLE_ID': 1})}
+    ok_prior_treatments, bad_prior_treatments = [], []
+    for pt in prior_treatments:
+        if pt.get('CLINICAL_ID'):
+            ok_prior_treatments.append(pt)
+        elif pt.get('SAMPLE_ID') in clinical_dict:
+            pt['CLINICAL_ID'] = clinical_dict[pt['SAMPLE_ID']]
+            ok_prior_treatments.append(pt)
+        else:
+            bad_prior_treatments.append(pt)
+
+    if bad_prior_treatments:
+        log.warning(f"Ignoring {len(bad_prior_treatments)} prior treatment documents with no corresponding clinical documents")
+
+    log.info(f"Loading {len(ok_prior_treatments)} prior treatment documents")
+    for c in ok_prior_treatments:
+        db_rw['prior_treatment'].insert_one(c)
