@@ -182,7 +182,39 @@ class PughLabQueryTransformers(QueryTransformers):
         years_int = int(years)
         return QueryTransformerResult({sample_key: {operator_map[operator]: years_int}}, False)
 
+    def prior_treatment_type_wildcard_case_insensitive_map(self, sample_key, trial_value, **kwargs):
+        trial_value, negate = self._is_negate(trial_value)
+
+        if trial_value.lower() == "surgery":
+            return QueryTransformerResult({'EVENT_TYPE': 'Surgery'}, negate)
+        else:
+            return QueryTransformerResult({sample_key: {'$regex': f'^{trial_value}$', '$options': 'i'}}, negate)
+
+    def prior_treatment_subtype_wildcard_case_insensitive_map(self, sample_key, trial_value, **kwargs):
+        treatment_subtype_map = {
+            "Immunotherapy".lower(): "immun",
+            "Chemotherapy".lower(): "chemo",
+            "Targeted Therapy".lower(): "targeted",
+            "Hormone Therapy".lower(): "hormon"
+        }
+        trial_value, negate = self._is_negate(trial_value)
+
+        results = QueryTransformerResult()
+        results.add_result({sample_key: {'$regex': f'{treatment_subtype_map[trial_value.lower()]}', '$options': 'i'}}, negate)
+        return results
+
     def prior_treatment_agent_case_insensitive_map(self, sample_key, trial_value, **kwargs):
         trial_value, negate = self._is_negate(trial_value)
 
         return QueryTransformerResult({sample_key: {'$regex': f'^{trial_value}$', '$options': 'i'}}, negate)
+
+    def prior_treatment_radiation_site_wildcard_case_insensitive_map(self, sample_key, trial_value, **kwargs):
+        trial_value, negate = self._is_negate(trial_value)
+
+        return QueryTransformerResult({sample_key: {'$regex': f'{trial_value}', '$options': 'i'}}, negate)
+
+    def prior_treatment_surgery_type_wildcard_case_insensitive_map(self, sample_key, trial_value, **kwargs):
+        trial_value, negate = self._is_negate(trial_value)
+
+        return QueryTransformerResult({sample_key: {'$regex': f'{trial_value}', '$options': 'i'}}, negate)
+

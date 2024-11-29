@@ -138,9 +138,25 @@
       "break_queries_into_parts": false,
       "join_order": 20,
       "trial_key_mappings": {
-        "prior_treatment_agent": {
+        "TREATMENT_CATEGORY": {
+          "sample_key": "TREATMENT_TYPE",
+          "sample_value": "prior_treatment_type_wildcard_case_insensitive_map"
+        },
+        "SUBTYPE": {
+          "sample_key": "SUBTYPE",
+          "sample_value": "prior_treatment_subtype_wildcard_case_insensitive_map"
+        },
+        "AGENT": {
           "sample_key": "AGENT",
           "sample_value": "prior_treatment_agent_case_insensitive_map"
+        },
+        "RADIATION_SITE": {
+          "sample_key": "RADIATION_SITE",
+          "sample_value": "prior_treatment_radiation_site_wildcard_case_insensitive_map"
+        },
+        "SURGERY_TYPE": {
+          "sample_key": "SURGERY_TYPE",
+          "sample_value": "prior_treatment_surgery_type_wildcard_case_insensitive_map"
         }
       }
     }
