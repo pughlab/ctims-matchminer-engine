@@ -43,7 +43,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
         reason_docs = [
             reason_doc
             for reason_doc in reason_docs
-            if (reason_doc.get('match_type') != 'generic_clinical') and (reason_doc.get('match_type') != 'prior_treatment_agent')
+            if (reason_doc.get('match_type') != 'generic_clinical')
         ]
         if not reason_docs:
             reason_docs = [{}]
@@ -168,19 +168,19 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
                 if diagnosis != 'NONE':
                     actual_match_value = trial_match.clinical_doc.get('ONCOTREE_PRIMARY_DIAGNOSIS_NAME')
                     trial_match_doc.update({'oncotree_primary_diagnosis_match_value': str(actual_match_value)})
-            if reason.query_kind == "prior_treatment":
-                agents = []
-                existing_agents = trial_match_doc.get('prior_treatment_agent')
-                if existing_agents:
-                    agents.append(existing_agents)
-                if reason.reference_docs:
-                    for rdoc in reason.reference_docs:
-                        agent = rdoc.get("AGENT")
-                        if agent and agent not in agents:
-                            agents.append(agent)
-                    trial_match_doc.update({'prior_treatment_agent': ",".join(agents)})
-                elif reason.reference_docs is None and reason.exclusion:
-                    trial_match_doc.update(reason.query)
+            # if reason.query_kind == "prior_treatment":
+            #     agents = []
+            #     existing_agents = trial_match_doc.get('prior_treatment_agent')
+            #     if existing_agents:
+            #         agents.append(existing_agents)
+            #     if reason.reference_docs:
+            #         for rdoc in reason.reference_docs:
+            #             agent = rdoc.get("AGENT")
+            #             if agent and agent not in agents:
+            #                 agents.append(agent)
+            #         trial_match_doc.update({'prior_treatment_agent': ",".join(agents)})
+            #     elif reason.reference_docs is None and reason.exclusion:
+            #         trial_match_doc.update(reason.query)
         # add trial fields except for extras
         trial_match_doc.update({k: v for k, v in trial_match.trial.items() if k in self._TRIAL_COPY_FIELDS})
         trial_match_doc['combo_coord'] = nested_object_hash(
@@ -226,7 +226,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             reason_match_doc.update(
                 {
                     'match_type': str(match_type),
-                    'genomic_alteration': str(alteration),
+                    'prior_treatment_agent': str(alteration),
                 }
             )
         return reason_match_doc
@@ -364,7 +364,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
         if agent:
             return (
                 "prior_treatment_agent",
-                f"Prior Treatment Agent: {agent}",
+                f"{agent}",
             )
         else:
             return 'prior_treatment_agent', "prior_treatment_agent"
