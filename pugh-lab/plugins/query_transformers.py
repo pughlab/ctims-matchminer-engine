@@ -203,6 +203,7 @@ class PughLabQueryTransformers(QueryTransformers):
         results.add_result({sample_key: {'$regex': f'{treatment_subtype_map[trial_value.lower()]}', '$options': 'i'}}, negate)
         return results
 
+    # for agent, we are matching for exact value
     def prior_treatment_agent_case_insensitive_map(self, sample_key, trial_value, **kwargs):
         trial_value, negate = self._is_negate(trial_value)
 
