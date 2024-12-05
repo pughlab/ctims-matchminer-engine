@@ -380,6 +380,8 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
                 "prior_treatment_agent",
                 f"Prior Treatment Agent: {agent}"
             )
+        else:
+            return ('prior_treatment_agent', "prior_treatment_agent")
 
     def _fmt_crit(self, trial_value):
         """
