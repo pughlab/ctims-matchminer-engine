@@ -254,7 +254,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             reason_match_doc.update({'match_type': str(match_type), 'genomic_alteration': '!' + str(alteration)})
         elif match_reason.query_kind == 'prior_treatment':
             match_type, alteration = self._format_prior_treatment_exclusion_match(match_reason)
-            reason_match_doc.update({'match_type': str(match_type), 'genomic_alteration': '!' + str(alteration)})
+            reason_match_doc.update({'match_type': str(match_type), 'prior_treatment_agent': '!' + str(alteration)})
 
         return reason_match_doc
 
@@ -375,11 +375,12 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
         """
         query = match_reason.query
         agent = query.get('prior_treatment_agent')
-        if agent:
-            return (
-                "prior_treatment_agent",
-                f"Prior Treatment Agent: {agent}"
-            )
+        if agent is None:
+            agent = query.get('agent')
+        return (
+            "prior_treatment_agent",
+            f"{agent}"
+        )
 
     def _fmt_crit(self, trial_value):
         """
