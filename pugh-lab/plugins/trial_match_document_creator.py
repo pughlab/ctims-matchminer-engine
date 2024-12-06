@@ -242,7 +242,6 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             'q_width': -1,
             'query': f'{match_reason.query}',
         }
-        logging.info(f"render exclusion: {match_reason.query_kind}: {match_reason.query}")
 
         if match_reason.query_kind == 'genomic':
             match_type, alteration = self._format_genomic_exclusion_match(match_reason, clinical_doc)
