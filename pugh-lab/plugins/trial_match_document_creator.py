@@ -7,6 +7,7 @@ from matchengine.internals.utilities.object_comparison import nested_object_hash
 import dateutil.parser
 import datetime
 from matchengine.plugin_stub import TrialMatchDocumentCreator
+import ast
 
 if TYPE_CHECKING:
     from matchengine.internals.typing.matchengine_types import TrialMatch, MatchReason
@@ -53,7 +54,6 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             match_doc = {}
             match_doc.update(base_match_doc)
             match_doc.update(reason_doc)
-
             patient_match_values_dict = {}
             for reason in trial_match.match_reasons:
                 tv = reason.query
@@ -68,8 +68,12 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
                         if k.upper() in self._CLINICAL_COPY_FIELDS and any(k_part in k or k in k_part for k_part in tv.keys())
                     })
                 elif reason.query_kind == "prior_treatment":
-                    print("Entered prior_treatment")
-                    patient_match_values_dict["prior_treatment_agent"] = base_match_doc.get("prior_treatment_agent", "")
+                    query_str = reason_doc.get("query")
+                    query_dict = ast.literal_eval(query_str)    
+                    patient_match_values_dict.update({
+                        k: v for k, v in query_dict.items()
+                        if k.upper() in self._PRIOR_TREATMENT_COPY_FIELDS and any(k_part in k or k in k_part for k_part in tv.keys())
+                    })
 
             patient_match_values_dict.update({'genomic_alteration': reason_doc.get("genomic_alteration", "")})
             # Filter out key-value pairs where the value is an empty string
@@ -562,4 +566,12 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
         "ER_STATUS"
     }
     _TRIAL_COPY_FIELDS = {'protocol_no', 'short_title', 'nickname', 'nct_id'}
-    _PRIOR_TREATMENT_COPY_FIELDS = {'AGENT'}
+    _PRIOR_TREATMENT_COPY_FIELDS = {
+        'AGENT',
+        'TREATMENT_CATEGORY',
+        'SUBTYPE',
+        'AGENT_CLASS',
+        'SURGERY_TYPE',
+        'RADIATION_TYPE',
+        'RADIATION_SITE'
+        }
