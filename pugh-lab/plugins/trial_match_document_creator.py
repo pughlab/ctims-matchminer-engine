@@ -7,7 +7,7 @@ from matchengine.internals.utilities.object_comparison import nested_object_hash
 import dateutil.parser
 import datetime
 from matchengine.plugin_stub import TrialMatchDocumentCreator
-import json
+import demjson
 
 if TYPE_CHECKING:
     from matchengine.internals.typing.matchengine_types import TrialMatch, MatchReason
@@ -69,8 +69,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
                     })
                 elif reason.query_kind == "prior_treatment":
                     query_str = reason_doc.get("query")
-                    json_compatible_str = query_str.replace("'", '"')
-                    query_dict = json.loads(json_compatible_str) 
+                    query_dict = demjson.decode(query_str) 
                     patient_match_values_dict.update({
                         k: v for k, v in query_dict.items()
                         if k.upper() in self._PRIOR_TREATMENT_COPY_FIELDS and any(k_part in k or k in k_part for k_part in tv.keys())
