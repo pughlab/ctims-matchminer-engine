@@ -68,10 +68,8 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
                         if k.upper() in self._CLINICAL_COPY_FIELDS and any(k_part in k or k in k_part for k_part in tv.keys())
                     })
                 elif reason.query_kind == "prior_treatment":
-                    query_str = reason_doc.get("query")
-                    query_dict = self.string_to_dict(query_str) 
                     patient_match_values_dict.update({
-                        k: v for k, v in query_dict.items()
+                        k: v for k, v in reason_doc.items()
                         if k.upper() in self._PRIOR_TREATMENT_COPY_FIELDS and any(k_part in k or k in k_part for k_part in tv.keys())
                     })
 
@@ -92,17 +90,6 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
 
         return results
     
-    def string_to_dict(self, json_string):
-        json_string = json_string.strip('{}').strip()
-        items = json_string.split(',')
-        result = {}
-        for item in items:
-            key, value = item.split(':')
-            key = key.strip().strip("'")
-            value = value.strip().strip("'")
-            result[key] = value
-        return result
-
     def _render_trial_match(self, trial_match: TrialMatch) -> Dict:
         """
         Create a base trial match document with all the fields shared by the documents for each MatchReason.
@@ -578,7 +565,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
     }
     _TRIAL_COPY_FIELDS = {'protocol_no', 'short_title', 'nickname', 'nct_id'}
     _PRIOR_TREATMENT_COPY_FIELDS = {
-        'AGENT',
+        'PRIOR_TREATMENT_AGENT',
         'TREATMENT_CATEGORY',
         'SUBTYPE',
         'AGENT_CLASS',
