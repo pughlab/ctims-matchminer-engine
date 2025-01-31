@@ -362,11 +362,11 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
         agent = treatment_doc.get("AGENT")
         if agent:
             return (
-                "prior_treatment_agent",
+                "prior_treatment",
                 f"{agent}",
             )
         else:
-            return 'prior_treatment_agent', "prior_treatment_agent"
+            return 'prior_treatment', "prior_treatment_agent"
 
     def _format_prior_treatment_exclusion_match(self, match_reason: MatchReason):
         """
@@ -377,7 +377,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
         if agent is None:
             agent = query.get('agent')
         return (
-            "prior_treatment_agent",
+            "prior_treatment",
             f"{agent}"
         )
 
