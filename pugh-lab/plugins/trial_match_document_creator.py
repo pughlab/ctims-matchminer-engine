@@ -8,6 +8,7 @@ import dateutil.parser
 import datetime
 from matchengine.plugin_stub import TrialMatchDocumentCreator
 
+
 if TYPE_CHECKING:
     from matchengine.internals.typing.matchengine_types import TrialMatch, MatchReason
     from typing import Dict
@@ -43,7 +44,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
         reason_docs = [
             reason_doc
             for reason_doc in reason_docs
-            if (reason_doc.get('match_type') != 'generic_clinical') and (reason_doc.get('match_type') != 'prior_treatment_agent')
+            if (reason_doc.get('match_type') != 'generic_clinical')
         ]
         if not reason_docs:
             reason_docs = [{}]
@@ -53,23 +54,26 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             match_doc = {}
             match_doc.update(base_match_doc)
             match_doc.update(reason_doc)
-            patient_match_values_dict = {
-                "genomic_alteration": reason_doc.get("genomic_alteration", ""),
-                "match_type": reason_doc.get("match_type", ""),
-                "ms_status": base_match_doc.get("ms_status", ""),
-                "oncotree_primary_diagnosis_name": base_match_doc.get("oncotree_primary_diagnosis_name", ""),
-                "age": base_match_doc.get("age", ""),
-                "er_status": base_match_doc.get("er_status", ""),
-                "her2_status": base_match_doc.get("her2_status", ""),
-                "pr_status": base_match_doc.get("pr_status", ""),
-                "true_hugo_symbol": reason_doc.get("true_hugo_symbol", ""),
-                "true_variant_classification": reason_doc.get("true_variant_classification", ""),
-                "variant_category": reason_doc.get("variant_category", ""),
-                "true_transcript_exon": reason_doc.get("true_transcript_exon", ""),
-                "true_protein_change": reason_doc.get("true_protein_change", ""),
-                "prior_treatment_agent": base_match_doc.get("prior_treatment_agent",""),
-                "oncotree_primary_diagnosis_match_value": base_match_doc.get("oncotree_primary_diagnosis_match_value", "")
-            }
+            patient_match_values_dict = {}
+            for reason in trial_match.match_reasons:
+                tv = reason.query
+                if reason.query_kind == "genomic":
+                    patient_match_values_dict.update({
+                        k: v for k, v in reason_doc.items()
+                        if k.upper() in self._GENOMIC_COPY_FIELDS and any(k_part in k or k in k_part for k_part in tv.keys())
+                    })
+                elif reason.query_kind == "clinical":
+                    patient_match_values_dict.update({
+                        k: v for k, v in base_match_doc.items()
+                        if k.upper() in self._CLINICAL_COPY_FIELDS and any(k_part in k or k in k_part for k_part in tv.keys())
+                    })
+                elif reason.query_kind == "prior_treatment":
+                    patient_match_values_dict.update({
+                        k: v for k, v in reason_doc.items()
+                        if k.upper() in self._PRIOR_TREATMENT_COPY_FIELDS and any(k_part in k or k in k_part for k_part in tv.keys())
+                    })
+
+            patient_match_values_dict.update({'genomic_alteration': reason_doc.get("genomic_alteration", "")})
             # Filter out key-value pairs where the value is an empty string
             filtered_data = {k: v for k, v in patient_match_values_dict.items() if v != "" and v !="NA"}
 
@@ -85,7 +89,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             results.append(match_doc)
 
         return results
-
+    
     def _render_trial_match(self, trial_match: TrialMatch) -> Dict:
         """
         Create a base trial match document with all the fields shared by the documents for each MatchReason.
@@ -168,19 +172,19 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
                 if diagnosis != 'NONE':
                     actual_match_value = trial_match.clinical_doc.get('ONCOTREE_PRIMARY_DIAGNOSIS_NAME')
                     trial_match_doc.update({'oncotree_primary_diagnosis_match_value': str(actual_match_value)})
-            if reason.query_kind == "prior_treatment":
-                agents = []
-                existing_agents = trial_match_doc.get('prior_treatment_agent')
-                if existing_agents:
-                    agents.append(existing_agents)
-                if reason.reference_docs:
-                    for rdoc in reason.reference_docs:
-                        agent = rdoc.get("AGENT")
-                        if agent and agent not in agents:
-                            agents.append(agent)
-                    trial_match_doc.update({'prior_treatment_agent': ",".join(agents)})
-                elif reason.reference_docs is None and reason.exclusion:
-                    trial_match_doc.update(reason.query)
+            # if reason.query_kind == "prior_treatment":
+            #     agents = []
+            #     existing_agents = trial_match_doc.get('prior_treatment_agent')
+            #     if existing_agents:
+            #         agents.append(existing_agents)
+            #     if reason.reference_docs:
+            #         for rdoc in reason.reference_docs:
+            #             agent = rdoc.get("AGENT")
+            #             if agent and agent not in agents:
+            #                 agents.append(agent)
+            #         trial_match_doc.update({'prior_treatment_agent': ",".join(agents)})
+            #     elif reason.reference_docs is None and reason.exclusion:
+            #         trial_match_doc.update(reason.query)
         # add trial fields except for extras
         trial_match_doc.update({k: v for k, v in trial_match.trial.items() if k in self._TRIAL_COPY_FIELDS})
         trial_match_doc['combo_coord'] = nested_object_hash(
@@ -226,7 +230,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             reason_match_doc.update(
                 {
                     'match_type': str(match_type),
-                    'genomic_alteration': str(alteration),
+                    'prior_treatment_agent': str(alteration),
                 }
             )
         return reason_match_doc
@@ -242,7 +246,6 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             'q_width': -1,
             'query': f'{match_reason.query}',
         }
-        logging.info(f"render exclusion: {match_reason.query_kind}: {match_reason.query}")
 
         if match_reason.query_kind == 'genomic':
             match_type, alteration = self._format_genomic_exclusion_match(match_reason, clinical_doc)
@@ -254,7 +257,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             reason_match_doc.update({'match_type': str(match_type), 'genomic_alteration': '!' + str(alteration)})
         elif match_reason.query_kind == 'prior_treatment':
             match_type, alteration = self._format_prior_treatment_exclusion_match(match_reason)
-            reason_match_doc.update({'match_type': str(match_type), 'genomic_alteration': '!' + str(alteration)})
+            reason_match_doc.update({'match_type': str(match_type), 'prior_treatment_agent': str(alteration)})
 
         return reason_match_doc
 
@@ -364,7 +367,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
         if agent:
             return (
                 "prior_treatment_agent",
-                f"Prior Treatment Agent: {agent}",
+                f"{agent}",
             )
         else:
             return 'prior_treatment_agent', "prior_treatment_agent"
@@ -375,11 +378,12 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
         """
         query = match_reason.query
         agent = query.get('prior_treatment_agent')
-        if agent:
-            return (
-                "prior_treatment_agent",
-                f"Prior Treatment Agent: {agent}"
-            )
+        if agent is None:
+            agent = query.get('agent')
+        return (
+            "prior_treatment_agent",
+            f"{agent}"
+        )
 
     def _fmt_crit(self, trial_value):
         """
@@ -560,4 +564,12 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
         "ER_STATUS"
     }
     _TRIAL_COPY_FIELDS = {'protocol_no', 'short_title', 'nickname', 'nct_id'}
-    _PRIOR_TREATMENT_COPY_FIELDS = {'AGENT'}
+    _PRIOR_TREATMENT_COPY_FIELDS = {
+        'PRIOR_TREATMENT_AGENT',
+        'TREATMENT_CATEGORY',
+        'SUBTYPE',
+        'AGENT_CLASS',
+        'SURGERY_TYPE',
+        'RADIATION_TYPE',
+        'RADIATION_SITE'
+        }
