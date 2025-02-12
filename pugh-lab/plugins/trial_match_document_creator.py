@@ -75,7 +75,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
 
             patient_match_values_dict.update({'genomic_alteration': reason_doc.get("genomic_alteration", "")})
             # Filter out key-value pairs where the value is an empty string
-            filtered_data = {k: v for k, v in patient_match_values_dict.items() if v != "" and v !="NA"}
+            filtered_data = {k: v for k, v in patient_match_values_dict.items() if v not in ("", "NA", "None")}
 
             # Convert the filtered dictionary to a JSON-like string format
             patient_match_values = f'{filtered_data}'
