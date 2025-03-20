@@ -3,8 +3,8 @@
   "trial_identifier": "trial_internal_id",
   "match_trial_link_id": "trial_internal_id",
   "trial_status_key": {
-    "key_name": "summary",
-    "open_to_accrual_values": ["open to accrual"]
+    "key_name": "status",
+    "open_to_accrual_values": ["Open to Accrual"]
   },
   "ctml_collection_mappings": {
     "clinical": {

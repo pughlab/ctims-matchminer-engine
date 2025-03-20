@@ -130,7 +130,8 @@ class MatchEngine(object):
             chunk_size: int = 1000,
             age_comparison_date = None,
             delete_run_logs = False,
-            start_time_utc = None
+            start_time_utc = None,
+            nightly_run: bool = False,
     ):
         self.run_id = uuid.uuid4()
 
@@ -159,6 +160,7 @@ class MatchEngine(object):
         self._matches = {}
         self._clinical_ids_by_protocol = {}
         self.failed_protocol_nos = {}
+        self.nightly_run = nightly_run
 
         log.info(f"Age comparison date: {self.age_comparison_date}")
 
@@ -535,7 +537,7 @@ class MatchEngine(object):
         return {clinical_id
                 for clinical_id, clinical_data
                 in self._clinical_data.items()
-                if clinical_data.get('VITAL_STATUS') == 'deceased'}
+                if clinical_data.get('VITAL_STATUS').lower() in {'deceased', 'na'}}
 
     def get_clinical_ids_from_sample_ids(self) -> Dict[ClinicalID, str]:
         """
@@ -611,7 +613,8 @@ class MatchEngine(object):
                 'match_on_closed': self.match_on_closed,
                 'workers': self.num_workers,
                 'ignore_run_log': self.ignore_run_log,
-                'ignore_report_date': self.ignore_report_date
+                'ignore_report_date': self.ignore_report_date,
+                'nightly_run': self.nightly_run
             },
             '_created': datetime.datetime.now(),
             'start_time_utc': self.start_time_utc,
