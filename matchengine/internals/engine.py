@@ -131,7 +131,6 @@ class MatchEngine(object):
             age_comparison_date = None,
             delete_run_logs = False,
             start_time_utc = None,
-            nightly_run: bool = False,
     ):
         self.run_id = uuid.uuid4()
 
@@ -160,7 +159,6 @@ class MatchEngine(object):
         self._matches = {}
         self._clinical_ids_by_protocol = {}
         self.failed_protocol_nos = {}
-        self.nightly_run = nightly_run
 
         log.info(f"Age comparison date: {self.age_comparison_date}")
 
@@ -614,7 +612,6 @@ class MatchEngine(object):
                 'workers': self.num_workers,
                 'ignore_run_log': self.ignore_run_log,
                 'ignore_report_date': self.ignore_report_date,
-                'nightly_run': self.nightly_run
             },
             '_created': datetime.datetime.now(),
             'start_time_utc': self.start_time_utc,
