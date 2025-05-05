@@ -65,7 +65,8 @@ class DBSecrets:
             'RABBITMQ_URI': self._secrets["RABBITMQ_URI"],
             'RABBITMQ_PORT': self._secrets["RABBITMQ_PORT"],
             'SEND_QUEUE': self._secrets["SEND_QUEUE"],
-            'RECEIVE_QUEUE': self._secrets["RECEIVE_QUEUE"]
+            'RECEIVE_QUEUE': self._secrets["RECEIVE_QUEUE"],
+            'NIGHTLY_MATCH_STATUS_QUEUE': self._secrets["NIGHTLY_MATCH_STATUS_QUEUE"],
         }
 
 
