@@ -163,7 +163,11 @@
   },
   "projections": {
     "prior_treatment": [
-      "AGENT"
+      "AGENT",
+      "AGENT_CLASS",
+      "TREATMENT_TYPE",
+      "RADIATION_SITE",
+      "SURGERY_TYPE"
     ],
     "genomic": [
       "TRUE_CDNA_CHANGE",
