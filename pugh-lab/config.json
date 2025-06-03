@@ -139,7 +139,7 @@
       "join_order": 20,
       "trial_key_mappings": {
         "TREATMENT_CATEGORY": {
-          "sample_key": "TREATMENT_TYPE",
+          "sample_key": "TREATMENT_CATEGORY",
           "sample_value": "prior_treatment_type_wildcard_case_insensitive_map"
         },
         "SUBTYPE": {
@@ -163,7 +163,11 @@
   },
   "projections": {
     "prior_treatment": [
-      "AGENT"
+      "AGENT",
+      "TREATMENT_CATEGORY",
+      "RADIATION_SITE",
+      "SURGERY_TYPE",
+      "EVENT_TYPE"
     ],
     "genomic": [
       "TRUE_CDNA_CHANGE",

@@ -68,9 +68,11 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
                         if k.upper() in self._CLINICAL_COPY_FIELDS and any(k_part in k or k in k_part for k_part in tv.keys())
                     })
                 elif reason.query_kind == "prior_treatment":
+                    if reason_doc["event_type"].lower()=="surgery":
+                        reason_doc["treatment_category"] = reason_doc.pop("event_type")
                     patient_match_values_dict.update({
                         k: v for k, v in reason_doc.items()
-                        if k.upper() in self._PRIOR_TREATMENT_COPY_FIELDS and any(k_part in k or k in k_part for k_part in tv.keys())
+                        if k.upper() in self._PRIOR_TREATMENT_COPY_FIELDS and any( k.lower() == k_part for k_part in tv.keys())
                     })
 
             patient_match_values_dict.update({'genomic_alteration': reason_doc.get("genomic_alteration", "")})
@@ -233,6 +235,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
                     'prior_treatment_agent': str(alteration),
                 }
             )
+            reason_match_doc.update({k.lower(): v for k, v in document.items() if k in self._PRIOR_TREATMENT_COPY_FIELDS})
         return reason_match_doc
 
     def _render_exclusion_match(self, match_reason: MatchReason, clinical_doc):
@@ -565,11 +568,13 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
     }
     _TRIAL_COPY_FIELDS = {'protocol_no', 'short_title', 'nickname', 'nct_id'}
     _PRIOR_TREATMENT_COPY_FIELDS = {
-        'PRIOR_TREATMENT_AGENT',
-        'TREATMENT_CATEGORY',
-        'SUBTYPE',
-        'AGENT_CLASS',
-        'SURGERY_TYPE',
-        'RADIATION_TYPE',
-        'RADIATION_SITE'
-        }
+    'PRIOR_TREATMENT_AGENT',
+    'AGENT',
+    'TREATMENT_CATEGORY',
+    'SUBTYPE',
+    'AGENT_CLASS',
+    'SURGERY_TYPE',
+    'RADIATION_TYPE',
+    'RADIATION_SITE',
+    'EVENT_TYPE'
+}
