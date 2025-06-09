@@ -68,7 +68,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
                         if k.upper() in self._CLINICAL_COPY_FIELDS and any(k_part in k or k in k_part for k_part in tv.keys())
                     })
                 elif reason.query_kind == "prior_treatment":
-                    if reason_doc["event_type"].lower()=="surgery":
+                    if "event_type" in reason_doc and reason_doc["event_type"].lower()=="surgery":
                         reason_doc["treatment_category"] = reason_doc.pop("event_type")
                     patient_match_values_dict.update({
                         k: v for k, v in reason_doc.items()
