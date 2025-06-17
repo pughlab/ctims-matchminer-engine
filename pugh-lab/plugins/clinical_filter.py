@@ -37,7 +37,7 @@ class PughLabClinicalFilter(ClinicalFilter):
         is_after_structured_sv_available = report_date and report_date >= datetime.datetime(2018, 12, 1, 0, 0, 0, 0)
 
         if has_structured_sv:
-            return is_after_structured_sv_available
+            return True
         elif has_unstructured_sv:
             return not is_after_structured_sv_available
         else:
