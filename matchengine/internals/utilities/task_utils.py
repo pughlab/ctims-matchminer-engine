@@ -75,8 +75,8 @@ async def run_check_indices_task(matchengine: MatchEngine, task, worker_id):
 
 async def run_index_update_task(matchengine: MatchEngine, task: IndexUpdateTask, worker_id):
     try:
-        log.info(f"Creating index: {task.index!r}")
-        matchengine.db_rw[task.collection].create_index(task.index)
+        log.info(f"Pretend Creating index: {task.index!r}")
+        # matchengine.db_rw[task.collection].create_index(task.index)
         matchengine.task_q.task_done()
     except Exception as e:
         log.error(f"ERROR: Worker: {worker_id}, error: {e}")
