@@ -568,9 +568,9 @@ class MatchEngine(object):
         return all_trials
 
     def _trial_is_open(self, trial) -> bool:
-        summary_status_open = trial.get("_summary", dict()).get("status", [dict()])[0].get("value", str()).lower() in {"open to accrual"}
+        summary_status_open = trial.get("_summary", dict()).get("status", [dict()])[0].get("value", str()).lower() in {"open to accrual", "Recruiting"}
 
-        # By default, first check if _summary.status.value: "open to accrual"
+        # By default, first check if _summary.status.value: "open to accrual" or "Recruiting"
         if summary_status_open:
             return True
 

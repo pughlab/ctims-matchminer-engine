@@ -40,7 +40,7 @@ class MatchCriteriaTransform(object):
         self.trial_collection = config.get('trial_collection', 'trial')
         self.trial_identifier = config.get('trial_identifier', 'protocol_no')
         self.match_trial_link_id = config.get('match_trial_link_id', self.trial_identifier)
-        # By default, only trials that are "Open to Accrual" are run.
+        # By default, only trials that are "Open to Accrual" or "Recruiting" are run.
         # This value by default is stored inside a "_summary" object.
         # If a different field indicates trial accrual status, that is set here.
         self.use_custom_trial_status_key = self.config.get("trial_status_key", None)
