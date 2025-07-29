@@ -4,7 +4,7 @@
   "match_trial_link_id": "trial_internal_id",
   "trial_status_key": {
     "key_name": "status",
-    "open_to_accrual_values": ["Open to Accrual"]
+    "open_to_accrual_values": ["Open to Accrual", "Recruiting"]
   },
   "ctml_collection_mappings": {
     "clinical": {
