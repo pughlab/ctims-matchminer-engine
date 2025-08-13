@@ -359,6 +359,7 @@ class MatchEngine(object):
             elif task_class is CheckIndicesTask:
                 await run_check_indices_task(*args)
 
+#mickey
             elif task_class is IndexUpdateTask:
                 await run_index_update_task(*args)
 
