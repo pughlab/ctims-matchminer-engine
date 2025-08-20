@@ -97,7 +97,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
         Create a base trial match document with all the fields shared by the documents for each MatchReason.
         """
 
-        coordinating_center = trial_match.trial.get('_summary', {}).get('coordinating_center', 'unknown')
+        coordinating_center = trial_match.clinical_doc.get('CENTRE', 'unknown')
 
         show_in_ui = True
         for reason in trial_match.match_reasons:
@@ -564,7 +564,8 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
         "AGE",
         "HER2_STATUS",
         "PR_STATUS",
-        "ER_STATUS"
+        "ER_STATUS",
+        "CENTRE"
     }
     _TRIAL_COPY_FIELDS = {'protocol_no', 'short_title', 'nickname', 'nct_id'}
     _PRIOR_TREATMENT_COPY_FIELDS = {

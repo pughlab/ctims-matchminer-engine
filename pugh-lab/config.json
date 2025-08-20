@@ -215,7 +215,8 @@
       "HER2_STATUS",
       "PR_STATUS",
       "ER_STATUS",
-      "AGENT"
+      "AGENT",
+      "CENTRE"
     ],
     "trial": [
       "protocol_no",
