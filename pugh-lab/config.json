@@ -167,7 +167,8 @@
       "TREATMENT_CATEGORY",
       "RADIATION_SITE",
       "SURGERY_TYPE",
-      "EVENT_TYPE"
+      "EVENT_TYPE",
+      "SUBTYPE"
     ],
     "genomic": [
       "TRUE_CDNA_CHANGE",
