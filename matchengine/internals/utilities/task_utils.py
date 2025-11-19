@@ -148,9 +148,21 @@ async def run_query_task(matchengine: MatchEngine, task, worker_id):
             for match_document in match_documents:
                 match_document[matchengine.match_criteria_transform.match_trial_link_id] = protocol_no
                 match_document['sample_id'] = sample_id
+
+                # remove id field so hash isn't changed by refreshing data
+                clinical_id = match_document.pop('clinical_id', None)
+                genomic_id = match_document.pop('genomic_id', None)
+
                 # generate sort_order and hash fields after all fields are added
                 match_hash = nested_object_hash(match_document)
                 match_document['hash'] = match_hash
+
+                # Add _id fields back for reference
+                if clinical_id is not None:
+                    match_document['clinical_id'] = clinical_id
+                if genomic_id is not None:
+                    match_document['genomic_id'] = genomic_id
+
                 match_document['is_disabled'] = False
 
                 sample_match_list.append(match_document)
