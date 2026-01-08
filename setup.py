@@ -18,8 +18,6 @@ setup(
         'pugh-lab/plugins/query_transformers.py',
         'pugh-lab/plugins/trial_match_document_creator.py',
         'pugh-lab/config.json'])],
-    author='Eric Marriott, Ethan Siegel',
-    author_email='esiegel@ds.dfci.harvard.edu',
     description='Open source engine for matching cancer patients to precision medicine clinical trials (V2).',
     long_description=long_description,
     entry_points={
@@ -38,8 +36,6 @@ setup(
     ],
     include_package_data=True,
     python_requires='>=3.7,<3.11',
-    # download_url='https://github.com/dfci/matchengine-V2/archive/2.0.0.tar.gz',
-    download_url='https://github.com/pughlab/pmatchengine-pugh-lab/archive/mickey-qa-deploy.tar.gz',
 
     classifiers=[
         "Environment :: Console",
