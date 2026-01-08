@@ -10,6 +10,7 @@ setup(
     package_data={
         'matchengine': ['defaults/**/*', 'defaults/*'],
     },
+    author='Princess Margaret Cancer Center & Dana-Farber Cancer Institute',
     data_files=[('pugh-lab', [
         'pugh-lab/plugins/__init__.py',
         'pugh-lab/plugins/clinical_filter.py',
@@ -18,7 +19,7 @@ setup(
         'pugh-lab/plugins/query_transformers.py',
         'pugh-lab/plugins/trial_match_document_creator.py',
         'pugh-lab/config.json'])],
-    description='Open source engine for matching cancer patients to precision medicine clinical trials (V2).',
+    description='Open source engine for matching cancer patients to precision medicine clinical trials',
     long_description=long_description,
     entry_points={
         "console_scripts": [
@@ -46,7 +47,7 @@ setup(
         "Operating System :: POSIX :: Linux",
         "Operating System :: POSIX :: BSD",
         "Operating System :: Unix",
-        "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3 :: Only",
         "Topic :: Scientific/Engineering",
         "Topic :: Scientific/Engineering :: Bio-Informatics",
