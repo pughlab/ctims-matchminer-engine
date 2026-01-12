@@ -260,8 +260,8 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
             reason_match_doc.update({'match_type': str(match_type), 'genomic_alteration': '!' + str(alteration)})
         elif match_reason.query_kind == 'prior_treatment':
             match_type, alteration = self._format_prior_treatment_exclusion_match(match_reason)
-            reason_match_doc.update({'match_type': str(match_type), 'prior_treatment_agent': '!' + str(alteration)})
-            reason_match_doc['prior_treatment_agent'] = '!' + str(alteration)
+            reason_match_doc.update({'match_type': str(match_type), 'prior_treatment_agent': str(alteration)})
+            reason_match_doc['prior_treatment_agent'] = str(alteration)
             reason_match_doc['match_type'] = str(match_type)
 
             reason_match_doc.update({k.lower(): v for k, v in match_reason.query.items() if k in self._PRIOR_TREATMENT_COPY_FIELDS})
