@@ -70,9 +70,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
                 elif reason.query_kind == "prior_treatment":
                     if "event_type" in reason_doc and reason_doc["event_type"].lower()=="surgery":
                         reason_doc["treatment_category"] = reason_doc.pop("event_type")
-                    if "prior_treatment_agent" in reason_doc:
-                        print(f"prior_treatment_agent: {reason_doc['prior_treatment_agent']} in reason_doc")
-                    print("tv: ", tv)
+                    
                     # For each key in the prior treatment copy fields, if the key is also in the tv, add the value to the patient_match_values_dict
                     for k, v in reason_doc.items():
                         if k.upper() in self._PRIOR_TREATMENT_COPY_FIELDS and k.lower() in tv.keys():
