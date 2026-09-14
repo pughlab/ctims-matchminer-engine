@@ -177,9 +177,11 @@ def load_clinical(db_rw, args):
 
         clin_del = db_rw['clinical'].delete_many({'SAMPLE_ID': c['SAMPLE_ID']})
         gen_del = db_rw['genomic'].delete_many({'SAMPLE_ID': c['SAMPLE_ID']})
-        if clin_del.deleted_count or gen_del.deleted_count:
+        treatment_del = db_rw['prior_treatment'].delete_many({'SAMPLE_ID': c['SAMPLE_ID']})
+        if clin_del.deleted_count or gen_del.deleted_count or treatment_del.deleted_count:
             log.info(
                 f"Removed {clin_del.deleted_count} duplicate clinical documents and {gen_del.deleted_count} genomic documents"
+                f"or {treatment_del.deleted_count} prior treatment documents"
             )
         db_rw['clinical'].insert_one(c)
 

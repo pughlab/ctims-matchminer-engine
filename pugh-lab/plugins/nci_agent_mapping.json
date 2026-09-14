@@ -1,0 +1,37 @@
+{
+    "Anti-PD1 Monoclonal Antibody": [
+        "Pembrolizumab"
+    ],
+    "Monoclonal Antibody": [
+        "Anti-PD1 Monoclonal Antibody",
+        "Pembrolizumab"
+    ],
+    "PD1 Inhibitor": [
+        "Anti-PD1 Monoclonal Antibody",
+        "Pembrolizumab"
+    ],
+    "Immunotherapeutic Agent": [
+        "Immune Checkpoint Modulator",
+        "Immune Checkpoint Inhibitor",
+        "PD1 Inhibitor",
+        "Monoclonal Antibody",
+        "Anti-PD1 Monoclonal Antibody",
+        "Pembrolizumab"
+    ],
+    "Immune Checkpoint Inhibitor": [
+        "PD1 Inhibitor",
+        "Anti-PD1 Monoclonal Antibody",
+        "Pembrolizumab"
+    ],
+    "Immune Checkpoint Modulator": [
+        "Immune Checkpoint Inhibitor",
+        "PD1 Inhibitor",
+        "Anti-PD1 Monoclonal Antibody",
+        "Pembrolizumab"
+    ],
+    "Biological Agent": [
+        "Monoclonal Antibody",
+        "Anti-PD1 Monoclonal Antibody",
+        "Pembrolizumab"
+    ]
+}
