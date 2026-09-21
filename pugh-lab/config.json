@@ -157,6 +157,10 @@
         "SURGERY_TYPE": {
           "sample_key": "SURGERY_TYPE",
           "sample_value": "prior_treatment_surgery_type_wildcard_case_insensitive_map"
+        },
+        "AGENT_CLASS": {
+          "sample_key": "AGENT",
+          "sample_value": "prior_treatment_agent_class_case_insensitive_map"
         }
       }
     }
@@ -164,6 +168,7 @@
   "projections": {
     "prior_treatment": [
       "AGENT",
+      "AGENT_CLASS",
       "TREATMENT_CATEGORY",
       "RADIATION_SITE",
       "SURGERY_TYPE",

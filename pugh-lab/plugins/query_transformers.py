@@ -22,6 +22,32 @@ class PughLabQueryTransformers(QueryTransformers):
             self._oncotree = oncotree
         except Exception as e:
             raise Exception("failed to load oncotree file") from e
+        try:
+            agentclient_file = Path(__file__).parent / 'nci_agent_mapping.json'
+            with agentclient_file.open('r') as file:
+                agentclient = json.load(file)
+            agentclient = {
+                key:
+                [val] if not isinstance(val, list) else sorted(val)
+                for key, val in agentclient.items()
+            }
+            self._agentclient = agentclient
+        except Exception as e:
+            raise Exception("failed to load agentclient file") from e
+        
+        try:
+            agentclientsynonyms_file = Path(__file__).parent / 'nci_synonyms.json'
+            with agentclientsynonyms_file.open('r') as file:
+                agentclientsynonyms = json.load(file)
+            agentclientsynonyms = {
+                key:
+                [val] if not isinstance(val, list) else sorted(val)
+                for key, val in agentclientsynonyms.items()
+            }
+            self._agentclientsynonyms = agentclientsynonyms
+        except Exception as e:
+            raise Exception("failed to load agentclient file") from e
+        
 
     def tmb_range_to_query(self, sample_key, trial_value, **kwargs):
         operator_map = {
@@ -208,6 +234,21 @@ class PughLabQueryTransformers(QueryTransformers):
         trial_value, negate = self._is_negate(trial_value)
 
         return QueryTransformerResult({sample_key: {'$regex': f'^{trial_value}$', '$options': 'i'}}, negate)
+    
+    def prior_treatment_agent_class_case_insensitive_map(self, sample_key, trial_value, **kwargs):
+        trial_value, negate = self._is_negate(trial_value)
+        synonymvalue=trial_value
+        agentclientsynonyms= self._agentclientsynonyms
+        for key, values in agentclientsynonyms.items():
+            if any(trial_value.lower() == v.lower() for v in values):
+                synonymvalue = key
+                break
+        values = self._agentclient.get(synonymvalue, synonymvalue)
+        new_values = [
+            {sample_key: {'$regex': f'^{old_value}$', '$options': 'i'}} for old_value in values
+        ]
+        return QueryTransformerResult({'$or': new_values}, negate)
+    
 
     def prior_treatment_radiation_site_wildcard_case_insensitive_map(self, sample_key, trial_value, **kwargs):
         trial_value, negate = self._is_negate(trial_value)

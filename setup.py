@@ -15,6 +15,8 @@ setup(
         'pugh-lab/plugins/__init__.py',
         'pugh-lab/plugins/clinical_filter.py',
         'pugh-lab/plugins/oncotree_mapping.json',
+        'pugh-lab/plugins/nci_agent_mapping.json',
+        'pugh-lab/plugins/nci_synonyms.json',
         'pugh-lab/plugins/query_processor.py',
         'pugh-lab/plugins/query_transformers.py',
         'pugh-lab/plugins/trial_match_document_creator.py',
