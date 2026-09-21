@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setup(
     name="PMatchEngine",
-    version="2.2.3",
+    version="3.2.0",
     packages=find_packages(),
     package_data={
         'matchengine': ['defaults/**/*', 'defaults/*'],
