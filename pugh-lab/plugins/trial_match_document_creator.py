@@ -81,7 +81,12 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
                 patient_match_values_dict['agent'] = agent_value
             else:
                 patient_match_values_dict.pop('agent', None)
-            patient_match_values_dict.setdefault('agent_class', reason_doc.get("agent_class_match_values", ""))
+            agent_class_value = reason_doc.get("agent_class_match_values", "")
+            if agent_class_value:
+                patient_match_values_dict['agent_class'] = agent_class_value
+            else:
+                patient_match_values_dict.pop('agent_class', None)
+            #patient_match_values_dict.setdefault('agent_class', reason_doc.get("agent_class_match_values", ""))
             # Filter out key-value pairs where the value is an empty string
             filtered_data = {k: v for k, v in patient_match_values_dict.items() if v not in ("", "NA", "None")}
 
@@ -394,8 +399,8 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
         elif agent_class and agent_class_query:
             return (
                 "prior_treatment",
-                "",
-                f"{agent_class}"
+                f"{agent_class}",
+                f"{agent_class_query}"
             )
         else:
             return 'prior_treatment', "", ""
@@ -410,7 +415,7 @@ class PughLabTrialMatchDocumentCreator(TrialMatchDocumentCreator):
         if agent is None:
             agent = query.get('agent')
         if agent_class is None:
-            agent_class = query.get('agent')
+            agent_class = query.get('agent_class')
         return (
             "prior_treatment",
             f"{agent}",
